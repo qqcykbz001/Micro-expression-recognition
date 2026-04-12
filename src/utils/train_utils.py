@@ -82,10 +82,10 @@ def train(model, train_loader, criterion, optimizer, device, accumulation_steps=
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
         
-        # if (batch_idx + 1) % 5 == 0 or (batch_idx + 1) == batch_count:
-        #     batch_accuracy = 100.*correct/total
-        #     avg_loss = running_loss/(batch_idx+1)
-        #     log_func(f'  [Batch {batch_idx+1}/{batch_count}] Loss: {avg_loss:.4f}, Acc: {batch_accuracy:.2f}%, Time: {batch_time:.2f}s')
+        if (batch_idx + 1) % 5 == 0 or (batch_idx + 1) == batch_count:
+            batch_accuracy = 100.*correct/total
+            avg_loss = running_loss/(batch_idx+1)
+            log_func(f'  [Batch {batch_idx+1}/{batch_count}] Loss: {avg_loss:.4f}, Acc: {batch_accuracy:.2f}%, Time: {batch_time:.2f}s')
     
     if (batch_idx + 1) % accumulation_steps != 0:
         if use_amp:

@@ -4,6 +4,7 @@ from torch.utils.data import Dataset
 from PIL import Image
 import numpy as np
 import cv2
+import pickle
 
 class BaseMicroExpressionDataset(Dataset):
     """微表情数据集基类，包含通用的处理逻辑"""
@@ -22,6 +23,10 @@ class BaseMicroExpressionDataset(Dataset):
         
         # 类别名称，由子类定义
         self.class_names = []
+        
+        # 光流缓存目录
+        self.flow_cache_dir = os.path.join('cache', 'optical_flow')
+        os.makedirs(self.flow_cache_dir, exist_ok=True)
 
     def get_class_names(self):
         """获取数据集的类别名称"""
@@ -49,7 +54,11 @@ class BaseMicroExpressionDataset(Dataset):
         mask = np.zeros_like(freq)
         low, high = frequency_band
         mask[(np.abs(freq) >= low) & (np.abs(freq) <= high)] = 1
-        mask = mask[:, np.newaxis, np.newaxis, np.newaxis]
+        # 根据输入的维度调整mask形状
+        if len(frames.shape) == 4:
+            mask = mask[:, np.newaxis, np.newaxis, np.newaxis]
+        elif len(frames.shape) == 3:
+            mask = mask[:, np.newaxis, np.newaxis]
         fft_frames *= mask
         amplified_frames = np.fft.ifft(fft_frames, axis=0).real
         amplified_frames *= amplification
@@ -143,10 +152,58 @@ class BaseMicroExpressionDataset(Dataset):
 
     def _load_and_process_frames(self, video_path, video_name):
         """通用的加载和处理流程，子类需提供关键帧索引逻辑"""
+        # 生成缓存文件名
+        cache_filename = f"{video_name}_{self.num_frames}_{self.height}_{self.width}_{self.frame_step}_{self.config.optical_flow_type}_{self.config.use_two_stream}.pkl"
+        cache_path = os.path.join(self.flow_cache_dir, cache_filename)
+        
+        # 加载帧文件列表
         frame_files = sorted([f for f in os.listdir(video_path) if f.endswith(('.jpg', '.png'))])
         if not frame_files:
-            return torch.zeros((3, self.num_frames, self.height, self.width))
+            return torch.zeros((1, self.num_frames, self.height, self.width))
+        
+        # 检查缓存是否存在
+        if os.path.exists(cache_path):
+            try:
+                with open(cache_path, 'rb') as f:
+                    cached_data = pickle.load(f)
+                original_frames = cached_data['original_frames']
+                flow_frames = cached_data['flow_frames']
+                # self.log_func(f"加载光流缓存: {cache_filename}")
+            except Exception as e:
+                self.log_func(f"缓存加载失败: {e}")
+                # 缓存加载失败，重新计算
+                original_frames, flow_frames = self._compute_frames(video_path, video_name, frame_files)
+        else:
+            # 缓存不存在，计算光流
+            original_frames, flow_frames = self._compute_frames(video_path, video_name, frame_files)
+            
+            # 保存到缓存
+            try:
+                cached_data = {
+                    'original_frames': original_frames,
+                    'flow_frames': flow_frames
+                }
+                with open(cache_path, 'wb') as f:
+                    pickle.dump(cached_data, f)
+                # self.log_func(f"保存光流缓存: {cache_filename}")
+            except Exception as e:
+                self.log_func(f"缓存保存失败: {e}")
 
+        flow_frames = self._apply_data_augmentation(flow_frames)
+        flow_frames_tensor = torch.tensor(flow_frames).permute(3, 0, 1, 2).float()
+
+        if self.config and self.config.use_two_stream:
+            rgb_frames = original_frames[:self.num_frames] / 255.0 * 2 - 1
+            rgb_tensor = torch.tensor(rgb_frames).permute(3, 0, 1, 2).float()
+            return torch.cat([rgb_tensor, flow_frames_tensor], dim=0)
+        
+        # 单流法使用灰度图
+        rgb_frames = original_frames[:self.num_frames] / 255.0 * 2 - 1
+        rgb_tensor = torch.tensor(rgb_frames).permute(3, 0, 1, 2).float()
+        return rgb_tensor
+    
+    def _compute_frames(self, video_path, video_name, frame_files):
+        """计算帧和光流"""
         # 获取采样窗口（子类需实现或提供默认逻辑）
         start_idx = self._get_sampling_start_idx(video_name, frame_files)
         needed_frames_count = self.num_frames * self.frame_step + 1
@@ -160,18 +217,19 @@ class BaseMicroExpressionDataset(Dataset):
         for i in range(0, len(selected_frames), self.frame_step):
             if len(original_frames) >= self.num_frames + 1: break
             frame = Image.open(os.path.join(video_path, selected_frames[i])).resize((self.width, self.height))
+            # 转换为灰度图
+            frame = frame.convert('L')
             frame_np = np.array(frame)
-            # 确保图像是RGB格式
-            if len(frame_np.shape) == 2:
-                # 单通道图像，转换为RGB
-                frame_np = np.stack([frame_np, frame_np, frame_np], axis=-1)
-            elif frame_np.shape[2] == 1:
-                # 单通道图像，转换为RGB
-                frame_np = np.repeat(frame_np, 3, axis=-1)
+            # 保持单通道
             original_frames.append(frame_np)
         
         while len(original_frames) < self.num_frames + 1:
             original_frames.append(original_frames[-1])
+
+        # 转换为numpy数组并添加通道维度
+        original_frames = np.array(original_frames)
+        if len(original_frames.shape) == 3:
+            original_frames = np.expand_dims(original_frames, axis=-1)
 
         if self.config and self.config.use_evm:
             original_frames = self._apply_evm(original_frames, self.config.evm_amplification, self.config.evm_frequency_band)
@@ -182,16 +240,8 @@ class BaseMicroExpressionDataset(Dataset):
         
         while len(flow_frames) < self.num_frames:
             flow_frames.append(flow_frames[-1])
-
-        flow_frames = self._apply_data_augmentation(flow_frames)
-        flow_frames_tensor = torch.tensor(flow_frames).permute(3, 0, 1, 2).float()
-
-        if self.config and self.config.use_two_stream:
-            rgb_frames = np.array(original_frames[:self.num_frames]) / 255.0 * 2 - 1
-            rgb_tensor = torch.tensor(rgb_frames).permute(3, 0, 1, 2).float()
-            return torch.cat([rgb_tensor, flow_frames_tensor], dim=0)
-        
-        return flow_frames_tensor
+            
+        return original_frames, flow_frames
 
     def _get_sampling_start_idx(self, video_name, frame_files):
         """获取采样起始索引，默认从中间开始，子类可重写"""

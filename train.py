@@ -162,8 +162,8 @@ def main():
             generator=generator
         )
 
-        # 根据是否使用双流法设置输入通道数
-        input_channels = 6 if config.use_two_stream else 3
+        # 根据是否使用双流法设置输入通道数（单通道灰度图）
+        input_channels = 4 if config.use_two_stream else 1
         
         # 创建模型
         if config.model_name == 'resnet3d18':
@@ -388,7 +388,7 @@ def main():
         accuracies.append(best_accuracy)
         uf1_scores.append(best_uf1)
         valid_subjects.append(test_subject)
-        log(f'batch {i + 1} 完成 最佳Acc: {best_accuracy:.3f}%, 最佳 UF1: {best_uf1:.3f}%')
+        log(f'epoch {i + 1} 完成 最佳Acc: {best_accuracy:.3f}%, 最佳 UF1: {best_uf1:.3f}%')
 
     if accuracies:
         avg_acc = np.mean(accuracies)

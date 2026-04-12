@@ -11,10 +11,10 @@ class Config:
     """训练配置类"""
     def __init__(self):
         # 数据集配置
-        self.dataset_name = 'samm'  # 数据集名称: 'casme2', 'samm', etc.
+        self.dataset_name = 'casme2'  # 数据集名称: 'casme2', 'samm'
         self.dataset_roots = {
             'casme2': 'CASME2/Cropped',
-            'samm': 'SAMM/SAMM'
+            'samm': 'SAMM/Cropped'
         }
         
         # 自动获取当前数据集的根目录
@@ -58,19 +58,19 @@ class Config:
         
         # 数据增强配置
         self.use_data_augmentation = True  # 是否使用数据增强
-        self.random_crop = False  # 是否使用随机裁剪
+        self.random_crop = True  # 是否使用随机裁剪
         self.crop_size = 94  # 裁剪大小
         self.random_scale = True  # 是否使用随机缩放
-        self.scale_range = [0.9, 1.1]  # 缩放范围
-        self.random_rotation = False  # 是否使用随机旋转
-        self.rotation_range = [-3, 3]  # 旋转角度范围
+        self.scale_range = [0.8, 1.2]  # 缩放范围
+        self.random_rotation = True  # 是否使用随机旋转
+        self.rotation_range = [-2, 2]  # 旋转角度范围
         
         # 光流特征增强配置
         self.optical_flow_type = 'tv_l1'  # 光流类型: 'farneback', 'tv_l1'
         self.use_evm = False  # 是否使用欧拉视频放大
         self.evm_amplification = 10.0  # 欧拉视频放大倍数
         self.evm_frequency_band = [0.1, 0.3]  # 欧拉视频放大的频率带
-        self.use_two_stream = True  # 是否使用双流法
+        self.use_two_stream = False  # 是否使用双流法
         
         # 学习率调度器配置
         self.scheduler_name = 'cosine'  # 调度器名称: 'cosine', 'step', 'reduce_lr_on_plateau'
