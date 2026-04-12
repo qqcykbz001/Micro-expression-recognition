@@ -5,7 +5,7 @@ from sklearn.metrics import confusion_matrix
 import seaborn as sns
 
 # 训练可视化函数
-def plot_training_metrics(train_losses, train_accuracies, test_accuracies, test_uar_scores, test_uf1s, learning_rates, fold, model_dir):
+def plot_training_metrics(train_losses, train_accuracies, test_accuracies, test_uar_scores, test_uf1s, learning_rates, fold, model_dir, dataset_name='casme2'):
     """生成训练过程的可视化图表"""
     epochs = range(1, len(train_losses) + 1)
     
@@ -17,7 +17,7 @@ def plot_training_metrics(train_losses, train_accuracies, test_accuracies, test_
     
     # 创建一个包含2x2子图的图表
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-    fig.suptitle(f'Training Metrics - Fold {fold}', fontsize=20, fontweight='bold')
+    fig.suptitle(f'Training Metrics - {dataset_name} - Fold {fold}', fontsize=20, fontweight='bold')
     
     # 1. 损失曲线 (训练损失)
     axes[0, 0].plot(epochs, train_losses, 'b-', linewidth=2, label='Train Loss')
@@ -59,12 +59,12 @@ def plot_training_metrics(train_losses, train_accuracies, test_accuracies, test_
     
     # 保存图表
     os.makedirs(model_dir, exist_ok=True)
-    plot_path = os.path.join(model_dir, f'training_metrics_fold{fold}.png')
+    plot_path = os.path.join(model_dir, f'training_metrics_{dataset_name}_fold{fold}.png')
     plt.savefig(plot_path, dpi=300)
     plt.close()
     print(f'Training metrics plot saved to {plot_path}')
 
-def plot_confusion_matrix(all_targets, all_predicted, classes, model_dir, title='Overall Confusion Matrix'):
+def plot_confusion_matrix(all_targets, all_predicted, classes, model_dir, title='Overall Confusion Matrix', dataset_name='casme2'):
     """生成并保存混淆矩阵"""
     cm = confusion_matrix(all_targets, all_predicted)
     # 归一化
@@ -79,13 +79,13 @@ def plot_confusion_matrix(all_targets, all_predicted, classes, model_dir, title=
     
     sns.heatmap(cm, annot=labels, fmt="", cmap='Blues', xticklabels=classes, yticklabels=classes)
     
-    plt.title(title, fontsize=16, fontweight='bold', pad=20)
+    plt.title(f'{title} - {dataset_name}', fontsize=16, fontweight='bold', pad=20)
     plt.xlabel('Predicted Label', fontsize=12)
     plt.ylabel('True Label', fontsize=12)
     
     # 保存图表
     os.makedirs(model_dir, exist_ok=True)
-    cm_path = os.path.join(model_dir, 'overall_confusion_matrix.png')
+    cm_path = os.path.join(model_dir, f'overall_confusion_matrix_{dataset_name}.png')
     plt.savefig(cm_path, dpi=300, bbox_inches='tight')
     plt.close()
     print(f'Confusion matrix saved to {cm_path}')

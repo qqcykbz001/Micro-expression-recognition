@@ -58,8 +58,16 @@ class BaseMicroExpressionDataset(Dataset):
 
     def _calculate_optical_flow(self, prev_frame, curr_frame):
         """计算两帧之间的光流"""
-        prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_RGB2GRAY)
-        curr_gray = cv2.cvtColor(curr_frame, cv2.COLOR_RGB2GRAY)
+        # 处理单通道图像
+        if len(prev_frame.shape) == 2 or prev_frame.shape[2] == 1:
+            prev_gray = prev_frame if len(prev_frame.shape) == 2 else prev_frame[:, :, 0]
+        else:
+            prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_RGB2GRAY)
+        
+        if len(curr_frame.shape) == 2 or curr_frame.shape[2] == 1:
+            curr_gray = curr_frame if len(curr_frame.shape) == 2 else curr_frame[:, :, 0]
+        else:
+            curr_gray = cv2.cvtColor(curr_frame, cv2.COLOR_RGB2GRAY)
         
         if self.config and self.config.optical_flow_type == 'tv_l1':
             try:
@@ -152,7 +160,15 @@ class BaseMicroExpressionDataset(Dataset):
         for i in range(0, len(selected_frames), self.frame_step):
             if len(original_frames) >= self.num_frames + 1: break
             frame = Image.open(os.path.join(video_path, selected_frames[i])).resize((self.width, self.height))
-            original_frames.append(np.array(frame))
+            frame_np = np.array(frame)
+            # 确保图像是RGB格式
+            if len(frame_np.shape) == 2:
+                # 单通道图像，转换为RGB
+                frame_np = np.stack([frame_np, frame_np, frame_np], axis=-1)
+            elif frame_np.shape[2] == 1:
+                # 单通道图像，转换为RGB
+                frame_np = np.repeat(frame_np, 3, axis=-1)
+            original_frames.append(frame_np)
         
         while len(original_frames) < self.num_frames + 1:
             original_frames.append(original_frames[-1])

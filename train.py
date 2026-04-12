@@ -25,7 +25,7 @@ config = Config()
 
 # 使用时间戳生成唯一的日志文件名，以便区分不同次的训练
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-LOG_FILE = os.path.join(config.log_dir, f"training_{timestamp}.log")
+LOG_FILE = os.path.join(config.log_dir, f"training_{config.dataset_name}_{timestamp}.log")
 
 
 # 日志写入函数
@@ -77,7 +77,7 @@ def main():
     import numpy as np
     # 设置设备
     device = config.device
-    log(f'开始训练任务，日志文件: {LOG_FILE}', level="SUCCESS")
+    log(f'开始训练任务，数据集: {config.dataset_name}，日志文件: {LOG_FILE}', level="SUCCESS")
     log(f'使用设备: {device}')
     
     # 打印配置
@@ -97,11 +97,11 @@ def main():
 
     # 超参数
     num_epochs = config.num_epochs
-    batch_size = config.batch_size  # 调整batch大小，平衡训练稳定性和内存使用
+    batch_size = config.batch_size  
     learning_rate = config.learning_rate
-    num_classes = config.num_classes  # 新的4类分类方案：积极、消极、惊讶、其他
-    num_frames = config.num_frames  # 每个视频采样16帧
-    height, width = config.height, config.width  # 帧大小
+    num_classes = config.num_classes  
+    num_frames = config.num_frames 
+    height, width = config.height, config.width 
 
     # 获取所有受试者列表
     root_dir = config.root_dir
@@ -254,7 +254,7 @@ def main():
             scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.cosine_t_max)
 
         # 检查点保存路径
-        checkpoint_path = os.path.join(model_dir, f'checkpoint_fold{i + 1}.pth')
+        checkpoint_path = os.path.join(model_dir, f'checkpoint_{config.dataset_name}_fold{i + 1}.pth')
 
         # 用于可视化的记录
         train_losses = []
@@ -331,7 +331,7 @@ def main():
             # 保存最佳模型 - 基于准确率 (在单受试者测试集上比UAR更稳定)
             if test_acc > best_accuracy:
                 best_accuracy = test_acc
-                best_model_path = os.path.join(model_dir, f'best_resnet3d_model_fold{i + 1}.pth')
+                best_model_path = os.path.join(model_dir, f'best_resnet3d_model_{config.dataset_name}_fold{i + 1}.pth')
                 torch.save(model.state_dict(), best_model_path)
                 log(f'✓ 最佳模型已保存到 {best_model_path}，准确率: {best_accuracy:.2f}%')
             else:
@@ -366,7 +366,7 @@ def main():
 
         # 生成可视化图表
         plot_training_metrics(train_losses, train_accuracies, test_accuracies, test_uar_scores, test_uf1s, learning_rates, i + 1,
-                              config.figure_dir)
+                              config.figure_dir, dataset_name=config.dataset_name)
 
         # 计算最佳UF1分数
         if test_uf1s:
@@ -376,7 +376,7 @@ def main():
 
         # 收集该fold的最佳模型的预测结果
         # 重新加载最佳模型并测试
-        best_model_path = os.path.join(model_dir, f'best_resnet3d_model_fold{i + 1}.pth')
+        best_model_path = os.path.join(model_dir, f'best_resnet3d_model_{config.dataset_name}_fold{i + 1}.pth')
         if os.path.exists(best_model_path):
             model.load_state_dict(torch.load(best_model_path, weights_only=True))
             # 测试最佳模型并收集结果
@@ -396,7 +396,7 @@ def main():
         avg_uf1 = np.mean(uf1_scores)
         std_uf1 = np.std(uf1_scores)
 
-        log("=" * 30 + " LOSO 交叉验证最终总结 " + "=" * 30, level="SUCCESS")
+        log("=" * 30 + f" LOSO 交叉验证最终总结 ({config.dataset_name}) " + "=" * 30, level="SUCCESS")
         log(f"总计 Fold 数: {len(accuracies)}")
         log(f"平均准确率 (Mean Acc): {avg_acc:.3f}% (±{std_acc:.3f}%)")
         log(f"平均 UF1 分数 (Mean UF1): {avg_uf1:.3f}% (±{std_uf1:.3f}%)")
@@ -419,7 +419,7 @@ def main():
         
         # 绘制混淆矩阵
         classes = train_dataset.get_class_names()
-        plot_confusion_matrix(all_targets, all_predicted, classes, config.figure_dir)
+        plot_confusion_matrix(all_targets, all_predicted, classes, config.figure_dir, dataset_name=config.dataset_name)
         
         # 导出结果到CSV
         results_df = pd.DataFrame({
@@ -434,7 +434,7 @@ def main():
             'UF1': [avg_uf1, std_uf1]
         })
         results_df = pd.concat([results_df, summary_row], ignore_index=True)
-        csv_path = os.path.join(config.output_dir, f'loso_results_{timestamp}.csv')
+        csv_path = os.path.join(config.output_dir, f'loso_results_{config.dataset_name}_{timestamp}.csv')
         results_df.to_csv(csv_path, index=False)
         log(f'结果已导出到 CSV: {csv_path}', level="SUCCESS")
     else:

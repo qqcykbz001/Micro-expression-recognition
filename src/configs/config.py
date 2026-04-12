@@ -11,9 +11,10 @@ class Config:
     """训练配置类"""
     def __init__(self):
         # 数据集配置
-        self.dataset_name = 'casme2'  # 数据集名称: 'casme2', 'samm', etc.
+        self.dataset_name = 'samm'  # 数据集名称: 'casme2', 'samm', etc.
         self.dataset_roots = {
-            'casme2': 'CASME2/Cropped'
+            'casme2': 'CASME2/Cropped',
+            'samm': 'SAMM/SAMM'
         }
         
         # 自动获取当前数据集的根目录
