@@ -80,7 +80,7 @@ class Config:
         
         # 模型配置
         self.model_name = 'resnet3d18'  # 模型名称: 'resnet3d18', 'resnet3d50'
-        self.use_attention = True  # 是否使用注意力机制
+        self.use_attention = False  # 是否使用注意力机制
         self.attention_type = 'cbam'  # 注意力类型: 'cbam', 'self'
         self.pretrained = False  # 是否使用预训练权重
         
