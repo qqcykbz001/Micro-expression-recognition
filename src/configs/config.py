@@ -21,17 +21,17 @@ class Config:
         if self.dataset_name not in self.dataset_roots:
             raise ValueError(f"数据集 '{self.dataset_name}' 未在 dataset_roots 中配置路径！")
         self.root_dir = self.dataset_roots[self.dataset_name]
-        self.num_frames = 32  # 每个视频采样的帧数
+        self.num_frames = 16  # 每个视频采样的帧数
         self.height = 112  # 帧高度
         self.width = 112  # 帧宽度
         self.num_classes = 3  # 分类数量
         self.frame_step = 1  # 跳帧采样步长（1表示不跳帧，2表示每隔1帧取一帧）
         
         # 训练配置
-        self.batch_size = 8  # 批次大小
+        self.batch_size = 16  # 批次大小
         self.num_epochs = 50  # 训练轮数
-        self.learning_rate = 1e-4  # 学习率
-        self.accumulation_steps = 2  # 梯度累积步数
+        self.learning_rate = 3e-4  # 学习率
+        self.accumulation_steps = 1  # 梯度累积步数
         self.use_amp = True  # 是否使用混合精度训练
         self.num_workers = 4  # DataLoader 并行进程数
         self.persistent_workers = True  # 是否复用 DataLoader workers
@@ -42,11 +42,12 @@ class Config:
         self.focal_alpha = [1.0, 2.0, 0.8]  # Focal Loss的alpha参数
         self.focal_gamma = 2.0  # Focal Loss的gamma参数
         self.label_smoothing = 0.1  # 标签平滑系数 (提升泛化能力)
+        self.use_dynamic_alpha = True  # 是否使用动态计算的alpha值
         
         # 优化器配置
         self.optimizer_name = 'adamw'  # 优化器名称: 'sgd', 'adamw'
         self.sgd_momentum = 0.9  # SGD的动量参数
-        self.weight_decay = 1e-4  # 权重衰减参数
+        self.weight_decay = 5e-4  # 权重衰减参数
         self.adamw_beta1 = 0.9  # AdamW的beta1参数
         self.adamw_beta2 = 0.999  # AdamW的beta2参数
         self.adamw_eps = 1e-8  # AdamW的epsilon参数
@@ -54,21 +55,21 @@ class Config:
         # 正则化配置
         self.use_dropout = True  # 是否使用dropout
         self.dropout_rate = 0.5  # Dropout概率
-        self.use_batch_norm = True  # 是否使用批量归一化
+        self.use_batch_norm = False  # 是否使用批量归一化
         
         # 数据增强配置
         self.use_data_augmentation = True  # 是否使用数据增强
-        self.random_crop = True  # 是否使用随机裁剪
+        self.random_crop = False  # 是否使用随机裁剪
         self.crop_size = 94  # 裁剪大小
         self.random_scale = True  # 是否使用随机缩放
-        self.scale_range = [0.9, 1.1]  # 缩放范围
+        self.scale_range = [0.95, 1.05]  # 缩放范围
         self.random_rotation = True  # 是否使用随机旋转
         self.rotation_range = [-2, 2]  # 旋转角度范围
         
         # 光流特征增强配置
         self.optical_flow_type = 'tv_l1'  # 光流类型: 'farneback', 'tv_l1'
         self.use_evm = True  # 是否使用欧拉视频放大
-        self.evm_amplification = 10.0  # 欧拉视频放大倍数
+        self.evm_amplification = 5.0  # 欧拉视频放大倍数
         self.evm_frequency_band = [2.0, 5.0]  # 欧拉视频放大的频率带
         self.use_two_stream = True  # 是否使用双流法
         
