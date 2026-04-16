@@ -81,27 +81,34 @@ class CASME2Dataset(BaseMicroExpressionDataset):
                         })
 
     def _get_sampling_start_idx(self, video_name, frame_files):
-        """覆盖基类，根据Onset/Apex计算采样起始点"""
-        onset_idx = 0
+        """覆盖基类，以Apex帧为中心计算采样起始点"""
+        apex_idx = len(frame_files) // 2  # 默认中心位置
         if video_name in self.annotations:
-            onset_frame = self.annotations[video_name].get('onset')
-            if onset_frame is not None:
+            apex_frame = self.annotations[video_name].get('ApexFrame')
+            if apex_frame is not None:
                 try:
-                    onset_frame = int(onset_frame)
+                    apex_frame = int(apex_frame)
                     # 改进匹配逻辑：支持 img1.jpg, img001.jpg, img_001.jpg 等格式
-                    target_suffix = f"{onset_frame:03d}"  # 常见的补零格式
+                    target_suffix = f"{apex_frame:03d}"  # 常见的补零格式
                     for i, f in enumerate(frame_files):
                         # 检查文件名中是否包含该数字（作为独立部分）
-                        if f'img{onset_frame}.' in f or f'_{onset_frame}.' in f or target_suffix in f:
-                            onset_idx = i
+                        if f'img{apex_frame}.' in f or f'_{apex_frame}.' in f or target_suffix in f:
+                            apex_idx = i
                             break
                 except: pass
+        
+        # 计算以apex为中心的起始索引
+        window_size = self.num_frames * self.frame_step
+        start_idx = apex_idx - window_size // 2
         
         # 时域增强
         if self.config and self.config.use_data_augmentation:
             start_offset = np.random.randint(-2, 3)
-            return max(0, onset_idx + start_offset)
-        return onset_idx
+            start_idx = max(0, start_idx + start_offset)
+        else:
+            start_idx = max(0, start_idx)
+        
+        return start_idx
 
     def _log_distribution(self):
         """记录类别分布并给出alpha建议"""

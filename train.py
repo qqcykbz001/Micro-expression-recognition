@@ -434,7 +434,7 @@ def main():
             'UF1': [avg_uf1, std_uf1]
         })
         results_df = pd.concat([results_df, summary_row], ignore_index=True)
-        csv_path = os.path.join(config.output_dir, f'loso_results_{config.dataset_name}_{timestamp}.csv')
+        csv_path = os.path.join(config.dataset_output_dir, f'loso_results_{config.dataset_name}_{timestamp}.csv')
         results_df.to_csv(csv_path, index=False)
         log(f'结果已导出到 CSV: {csv_path}', level="SUCCESS")
     else:

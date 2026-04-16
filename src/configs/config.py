@@ -11,7 +11,7 @@ class Config:
     """训练配置类"""
     def __init__(self):
         # 数据集配置
-        self.dataset_name = 'casme2'  # 数据集名称: 'casme2', 'samm'
+        self.dataset_name = 'samm'  # 数据集名称: 'casme2', 'samm'
         self.dataset_roots = {
             'casme2': 'CASME2/Cropped',
             'samm': 'SAMM/Cropped'
@@ -21,7 +21,7 @@ class Config:
         if self.dataset_name not in self.dataset_roots:
             raise ValueError(f"数据集 '{self.dataset_name}' 未在 dataset_roots 中配置路径！")
         self.root_dir = self.dataset_roots[self.dataset_name]
-        self.num_frames = 16  # 每个视频采样的帧数
+        self.num_frames = 32  # 每个视频采样的帧数
         self.height = 112  # 帧高度
         self.width = 112  # 帧宽度
         self.num_classes = 3  # 分类数量
@@ -69,7 +69,7 @@ class Config:
         self.optical_flow_type = 'tv_l1'  # 光流类型: 'farneback', 'tv_l1'
         self.use_evm = True  # 是否使用欧拉视频放大
         self.evm_amplification = 10.0  # 欧拉视频放大倍数
-        self.evm_frequency_band = [0.1, 0.3]  # 欧拉视频放大的频率带
+        self.evm_frequency_band = [2.0, 5.0]  # 欧拉视频放大的频率带
         self.use_two_stream = True  # 是否使用双流法
         
         # 学习率调度器配置
@@ -86,11 +86,12 @@ class Config:
         
         # 输出配置
         self.output_dir = 'outputs'  # 输出目录
-        self.checkpoint_dir = os.path.join(self.output_dir, 'checkpoints')  # 检查点目录
-        self.figure_dir = os.path.join(self.output_dir, 'figures')  # 图表目录
-        self.log_dir = os.path.join(self.output_dir, 'logs')  # 日志目录
+        self.dataset_output_dir = os.path.join(self.output_dir, self.dataset_name)  # 数据集特定输出目录
+        self.checkpoint_dir = os.path.join(self.dataset_output_dir, 'checkpoints')  # 检查点目录
+        self.figure_dir = os.path.join(self.dataset_output_dir, 'figures')  # 图表目录
+        self.log_dir = os.path.join(self.dataset_output_dir, 'logs')  # 日志目录
         self.log_file = os.path.join(self.log_dir, 'training.log')  # 日志文件
-        self.save_checkpoint_freq = 1  # 检查点保存频率
+        self.save_checkpoint_freq = 10  # 检查点保存频率
         
         # 其他配置
         self.seed = 131  # 随机种子

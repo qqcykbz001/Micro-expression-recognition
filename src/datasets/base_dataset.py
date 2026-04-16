@@ -24,8 +24,9 @@ class BaseMicroExpressionDataset(Dataset):
         # 类别名称，由子类定义
         self.class_names = []
         
-        # 光流缓存目录
-        self.flow_cache_dir = os.path.join('cache', 'optical_flow')
+        # 光流缓存目录（按数据集分类）
+        dataset_name = os.path.basename(self.root_dir)
+        self.flow_cache_dir = os.path.join('cache', 'optical_flow', dataset_name)
         os.makedirs(self.flow_cache_dir, exist_ok=True)
 
     def get_class_names(self):
