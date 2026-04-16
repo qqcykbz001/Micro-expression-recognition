@@ -61,16 +61,16 @@ class Config:
         self.random_crop = True  # 是否使用随机裁剪
         self.crop_size = 94  # 裁剪大小
         self.random_scale = True  # 是否使用随机缩放
-        self.scale_range = [0.8, 1.2]  # 缩放范围
+        self.scale_range = [0.9, 1.1]  # 缩放范围
         self.random_rotation = True  # 是否使用随机旋转
         self.rotation_range = [-2, 2]  # 旋转角度范围
         
         # 光流特征增强配置
         self.optical_flow_type = 'tv_l1'  # 光流类型: 'farneback', 'tv_l1'
-        self.use_evm = False  # 是否使用欧拉视频放大
+        self.use_evm = True  # 是否使用欧拉视频放大
         self.evm_amplification = 10.0  # 欧拉视频放大倍数
         self.evm_frequency_band = [0.1, 0.3]  # 欧拉视频放大的频率带
-        self.use_two_stream = False  # 是否使用双流法
+        self.use_two_stream = True  # 是否使用双流法
         
         # 学习率调度器配置
         self.scheduler_name = 'cosine'  # 调度器名称: 'cosine', 'step', 'reduce_lr_on_plateau'
@@ -80,7 +80,7 @@ class Config:
         
         # 模型配置
         self.model_name = 'resnet3d18'  # 模型名称: 'resnet3d18', 'resnet3d50'
-        self.use_attention = False  # 是否使用注意力机制
+        self.use_attention = True  # 是否使用注意力机制
         self.attention_type = 'cbam'  # 注意力类型: 'cbam', 'self'
         self.pretrained = False  # 是否使用预训练权重
         
