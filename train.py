@@ -220,14 +220,46 @@ def main():
 
         # 定义损失函数和优化器
         if config.loss_name == 'focal':
-            log(f'定义损失函数: FocalLoss(alpha={config.focal_alpha}, gamma={config.focal_gamma}, smoothing={config.label_smoothing})')
-            criterion = FocalLoss(alpha=config.focal_alpha, gamma=config.focal_gamma, label_smoothing=config.label_smoothing)
+            # 动态计算focal_alpha
+            if config.use_dynamic_alpha:
+                # 从训练数据集中获取类别分布
+                labels = [sample['label'] for sample in train_dataset.samples]
+                from collections import Counter
+                counts = Counter(labels)
+                total = len(labels)
+                # 计算每个类别的权重
+                weights = [total / counts[i] if i in counts else 1.0 for i in range(config.num_classes)]
+                # 归一化权重
+                mean_w = sum(weights) / len(weights)
+                focal_alpha = [w / mean_w for w in weights]
+                log(f'使用动态计算的 focal_alpha: {[round(a, 3) for a in focal_alpha]}')
+            else:
+                focal_alpha = config.focal_alpha
+                log(f'使用静态 focal_alpha: {focal_alpha}')
+            log(f'定义损失函数: FocalLoss(alpha={[round(a, 3) for a in focal_alpha]}, gamma={config.focal_gamma}, smoothing={config.label_smoothing})')
+            criterion = FocalLoss(alpha=focal_alpha, gamma=config.focal_gamma, label_smoothing=config.label_smoothing)
         elif config.loss_name == 'cross_entropy':
             log(f'定义损失函数: CrossEntropyLoss(smoothing={config.label_smoothing})')
             criterion = nn.CrossEntropyLoss(label_smoothing=config.label_smoothing)
         else:
             log(f'损失函数名称 {config.loss_name} 不支持，使用默认损失函数: FocalLoss')
-            criterion = FocalLoss(alpha=config.focal_alpha, gamma=config.focal_gamma, label_smoothing=config.label_smoothing)
+            # 动态计算focal_alpha
+            if config.use_dynamic_alpha:
+                # 从训练数据集中获取类别分布
+                labels = [sample['label'] for sample in train_dataset.samples]
+                from collections import Counter
+                counts = Counter(labels)
+                total = len(labels)
+                # 计算每个类别的权重
+                weights = [total / counts[i] if i in counts else 1.0 for i in range(config.num_classes)]
+                # 归一化权重
+                mean_w = sum(weights) / len(weights)
+                focal_alpha = [w / mean_w for w in weights]
+                log(f'使用动态计算的 focal_alpha: {[round(a, 3) for a in focal_alpha]}')
+            else:
+                focal_alpha = config.focal_alpha
+                log(f'使用静态 focal_alpha: {focal_alpha}')
+            criterion = FocalLoss(alpha=focal_alpha, gamma=config.focal_gamma, label_smoothing=config.label_smoothing)
         # 定义优化器
         if config.optimizer_name == 'sgd':
             log(f'定义优化器: SGD(lr={learning_rate}, momentum={config.sgd_momentum}, weight_decay={config.weight_decay})')
