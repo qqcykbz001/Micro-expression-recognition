@@ -99,13 +99,14 @@ class BaseMicroExpressionDataset(Dataset):
     def _apply_data_augmentation(self, flow_frames):
         """应用数据增强"""
         if not self.config or not self.config.use_data_augmentation:
-            return flow_frames
+            return flow_frames, False
         
         augmented_frames = []
         # 随机参数对整个序列保持一致
         crop_params = None
         scale_params = None
         rotate_params = None
+        flip = False
         
         if self.config.random_crop:
             h, w = self.height, self.width
@@ -119,6 +120,9 @@ class BaseMicroExpressionDataset(Dataset):
             
         if self.config.random_rotation:
             rotate_params = np.random.uniform(*self.config.rotation_range)
+            
+        if hasattr(self.config, 'random_horizontal_flip') and self.config.random_horizontal_flip:
+            flip = np.random.random() > 0.5
 
         for flow_frame in flow_frames:
             # 应用裁剪
@@ -148,8 +152,12 @@ class BaseMicroExpressionDataset(Dataset):
                 M = cv2.getRotationMatrix2D((self.width // 2, self.height // 2), angle, 1.0)
                 flow_frame = cv2.warpAffine(flow_frame, M, (self.width, self.height), flags=cv2.INTER_LINEAR)
             
+            # 应用水平翻转
+            if flip:
+                flow_frame = cv2.flip(flow_frame, 1)
+            
             augmented_frames.append(flow_frame)
-        return np.array(augmented_frames)
+        return np.array(augmented_frames), flip
 
     def _load_and_process_frames(self, video_path, video_name):
         """通用的加载和处理流程，子类需提供关键帧索引逻辑"""
@@ -190,18 +198,58 @@ class BaseMicroExpressionDataset(Dataset):
             except Exception as e:
                 self.log_func(f"缓存保存失败: {e}")
 
-        flow_frames = self._apply_data_augmentation(flow_frames)
-        flow_frames_tensor = torch.tensor(flow_frames).permute(3, 0, 1, 2).float()
+        # 应用数据增强（包括水平翻转）
+        augmented_flow_frames, flip = self._apply_data_augmentation(flow_frames)
+        flow_frames_tensor = torch.tensor(augmented_flow_frames).permute(3, 0, 1, 2).float()
 
         if self.config and self.config.use_two_stream:
-            rgb_frames = original_frames[:self.num_frames] / 255.0 * 2 - 1
-            rgb_tensor = torch.tensor(rgb_frames).permute(3, 0, 1, 2).float()
-            return torch.cat([rgb_tensor, flow_frames_tensor], dim=0)
+            # 对灰度帧应用相同的水平翻转
+            gray_frames = original_frames[:self.num_frames]
+            # 确保 gray_frames 有通道维度
+            if len(gray_frames.shape) == 3:
+                gray_frames = np.expand_dims(gray_frames, axis=-1)
+            # 应用与光流帧相同的水平翻转
+            if flip:
+                # 对每个灰度帧应用水平翻转
+                flipped_gray_frames = []
+                for frame in gray_frames:
+                    flipped_frame = cv2.flip(frame, 1)
+                    flipped_gray_frames.append(flipped_frame)
+                gray_frames = np.array(flipped_gray_frames)
+                # 确保翻转后仍然有通道维度
+                if len(gray_frames.shape) == 3:
+                    gray_frames = np.expand_dims(gray_frames, axis=-1)
+            # 归一化
+            gray_frames = gray_frames / 255.0 * 2 - 1
+            # 再次检查维度
+            if len(gray_frames.shape) == 3:
+                gray_frames = np.expand_dims(gray_frames, axis=-1)
+            gray_tensor = torch.tensor(gray_frames).permute(3, 0, 1, 2).float()
+            return torch.cat([gray_tensor, flow_frames_tensor], dim=0)
         
         # 单流法使用灰度图
-        rgb_frames = original_frames[:self.num_frames] / 255.0 * 2 - 1
-        rgb_tensor = torch.tensor(rgb_frames).permute(3, 0, 1, 2).float()
-        return rgb_tensor
+        gray_frames = original_frames[:self.num_frames]
+        # 确保 gray_frames 有通道维度
+        if len(gray_frames.shape) == 3:
+            gray_frames = np.expand_dims(gray_frames, axis=-1)
+        # 应用与光流帧相同的水平翻转
+        if flip:
+            # 对每个灰度帧应用水平翻转
+            flipped_gray_frames = []
+            for frame in gray_frames:
+                flipped_frame = cv2.flip(frame, 1)
+                flipped_gray_frames.append(flipped_frame)
+            gray_frames = np.array(flipped_gray_frames)
+            # 确保翻转后仍然有通道维度
+            if len(gray_frames.shape) == 3:
+                gray_frames = np.expand_dims(gray_frames, axis=-1)
+        # 归一化
+        gray_frames = gray_frames / 255.0 * 2 - 1
+        # 再次检查维度
+        if len(gray_frames.shape) == 3:
+            gray_frames = np.expand_dims(gray_frames, axis=-1)
+        gray_tensor = torch.tensor(gray_frames).permute(3, 0, 1, 2).float()
+        return gray_tensor
     
     def _compute_frames(self, video_path, video_name, frame_files):
         """计算帧和光流"""

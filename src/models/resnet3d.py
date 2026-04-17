@@ -160,10 +160,31 @@ class ResNet3D(nn.Module):
         self.use_dropout = use_dropout
         self.dropout_rate = dropout_rate
         self.use_batch_norm = use_batch_norm
+        self.input_channels = input_channels
         
-        # 初始卷积层
-        self.conv1 = nn.Conv3d(input_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
-        self.bn1 = nn.BatchNorm3d(64) if use_batch_norm else nn.Identity()
+        # 检查是否使用双流法
+        self.use_two_stream = input_channels == 4
+        
+        if self.use_two_stream:
+            # 双流法：分别处理灰度流和光流
+            # 灰度流 (1通道)
+            self.gray_conv1 = nn.Conv3d(1, 32, kernel_size=7, stride=2, padding=3, bias=False)
+            self.gray_bn1 = nn.BatchNorm3d(32) if use_batch_norm else nn.Identity()
+            
+            # 光流 (3通道)
+            self.flow_conv1 = nn.Conv3d(3, 32, kernel_size=7, stride=2, padding=3, bias=False)
+            self.flow_bn1 = nn.BatchNorm3d(32) if use_batch_norm else nn.Identity()
+            
+            # 动态权重模块
+            self.flow_weight = nn.Parameter(torch.tensor(0.5))  # 初始权重为0.5
+            
+            # 融合后的通道数
+            self.in_channels = 64
+        else:
+            # 单流法
+            self.conv1 = nn.Conv3d(input_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
+            self.bn1 = nn.BatchNorm3d(64) if use_batch_norm else nn.Identity()
+        
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool3d(kernel_size=3, stride=2, padding=1)
         
@@ -198,7 +219,27 @@ class ResNet3D(nn.Module):
         return nn.Sequential(*layers)
     
     def forward(self, x):
-        x = self.relu(self.bn1(self.conv1(x)))
+        if self.use_two_stream:
+            # 分离灰度流和光流
+            gray_stream = x[:, :1, :, :, :]  # 第0通道是灰度
+            flow_stream = x[:, 1:, :, :, :]  # 第1-3通道是光流
+            
+            # 处理灰度流
+            gray = self.relu(self.gray_bn1(self.gray_conv1(gray_stream)))
+            
+            # 处理光流
+            flow = self.relu(self.flow_bn1(self.flow_conv1(flow_stream)))
+            
+            # 计算动态权重
+            weight = torch.sigmoid(self.flow_weight)  # 确保权重在0-1之间
+            gray_weight = 1 - weight
+            
+            # 融合两个流
+            x = torch.cat([gray * gray_weight, flow * weight], dim=1)
+        else:
+            # 单流法
+            x = self.relu(self.bn1(self.conv1(x)))
+        
         x = self.maxpool(x)
         
         x = self.layer1(x)

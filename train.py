@@ -284,6 +284,16 @@ def main():
         else:
             log(f'调度器名称 {config.scheduler_name} 不支持，使用默认调度器: CosineAnnealingLR')
             scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.cosine_t_max)
+        
+        # 学习率warmup相关参数
+        use_warmup = getattr(config, 'use_warmup', False)
+        warmup_epochs = getattr(config, 'warmup_epochs', 5)
+        warmup_start_lr = getattr(config, 'warmup_start_lr', 1e-6)
+        
+        if use_warmup:
+            log(f'启用学习率warmup: {warmup_epochs}轮, 起始学习率: {warmup_start_lr}')
+            # 计算warmup的学习率增长步长
+            warmup_step = (learning_rate - warmup_start_lr) / warmup_epochs
 
         # 检查点保存路径
         checkpoint_path = os.path.join(model_dir, f'checkpoint_{config.dataset_name}_fold{i + 1}.pth')
@@ -320,8 +330,17 @@ def main():
             log('开始训练...')
 
         for epoch in range(start_epoch, num_epochs):
-            current_lr = optimizer.param_groups[0]["lr"]
-            log(f'Epoch {epoch + 1}/{num_epochs}, 学习率: {current_lr:.6f}')
+            # 学习率warmup
+            if use_warmup and epoch < warmup_epochs:
+                # 计算当前warmup学习率
+                current_lr = warmup_start_lr + epoch * warmup_step
+                # 设置学习率
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = current_lr
+                log(f'Epoch {epoch + 1}/{num_epochs}, 学习率 (warmup): {current_lr:.6f}')
+            else:
+                current_lr = optimizer.param_groups[0]["lr"]
+                log(f'Epoch {epoch + 1}/{num_epochs}, 学习率: {current_lr:.6f}')
             # 记录epoch开始时间
             epoch_start = time.time()
 
@@ -349,12 +368,16 @@ def main():
             learning_rates.append(current_lr)
 
             # 更新学习率 - 确保在optimizer.step()之后调用
-            if config.scheduler_name == 'reduce_lr_on_plateau':
-                # ReduceLROnPlateau需要传入验证损失
-                scheduler.step(train_loss)
+            if use_warmup and epoch < warmup_epochs:
+                # warmup阶段不更新调度器
+                pass
             else:
-                # 其他调度器直接调用
-                scheduler.step()
+                if config.scheduler_name == 'reduce_lr_on_plateau':
+                    # ReduceLROnPlateau需要传入验证损失
+                    scheduler.step(train_loss)
+                else:
+                    # 其他调度器直接调用
+                    scheduler.step()
 
             # 计算epoch时间
             epoch_time = time.time() - epoch_start

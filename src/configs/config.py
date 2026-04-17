@@ -13,8 +13,8 @@ class Config:
         # 数据集配置
         self.dataset_name = 'samm'  # 数据集名称: 'casme2', 'samm'
         self.dataset_roots = {
-            'casme2': 'CASME2/Cropped',
-            'samm': 'SAMM/Cropped'
+            'casme2': 'CASME2/CASME2_Cropped',
+            'samm': 'SAMM/SAMM_Cropped'
         }
         
         # 自动获取当前数据集的根目录
@@ -28,9 +28,9 @@ class Config:
         self.frame_step = 1  # 跳帧采样步长（1表示不跳帧，2表示每隔1帧取一帧）
         
         # 训练配置
-        self.batch_size = 16  # 批次大小
+        self.batch_size = 4  # 批次大小
         self.num_epochs = 50  # 训练轮数
-        self.learning_rate = 3e-4  # 学习率
+        self.learning_rate = 1e-4  # 学习率
         self.accumulation_steps = 1  # 梯度累积步数
         self.use_amp = True  # 是否使用混合精度训练
         self.num_workers = 4  # DataLoader 并行进程数
@@ -40,31 +40,32 @@ class Config:
         # 损失函数配置
         self.loss_name = 'focal'  # 损失函数名称: 'focal', 'cross_entropy'
         self.focal_alpha = [1.0, 2.0, 0.8]  # Focal Loss的alpha参数
-        self.focal_gamma = 2.0  # Focal Loss的gamma参数
-        self.label_smoothing = 0.1  # 标签平滑系数 (提升泛化能力)
+        self.focal_gamma = 1.5  # Focal Loss的gamma参数
+        self.label_smoothing = 0.05  # 标签平滑系数 (提升泛化能力)
         self.use_dynamic_alpha = True  # 是否使用动态计算的alpha值
         
         # 优化器配置
         self.optimizer_name = 'adamw'  # 优化器名称: 'sgd', 'adamw'
         self.sgd_momentum = 0.9  # SGD的动量参数
-        self.weight_decay = 5e-4  # 权重衰减参数
+        self.weight_decay = 1e-4  # 权重衰减参数
         self.adamw_beta1 = 0.9  # AdamW的beta1参数
         self.adamw_beta2 = 0.999  # AdamW的beta2参数
         self.adamw_eps = 1e-8  # AdamW的epsilon参数
         
         # 正则化配置
         self.use_dropout = True  # 是否使用dropout
-        self.dropout_rate = 0.5  # Dropout概率
-        self.use_batch_norm = False  # 是否使用批量归一化
+        self.dropout_rate = 0.6  # Dropout概率
+        self.use_batch_norm = True  # 是否使用批量归一化
         
         # 数据增强配置
         self.use_data_augmentation = True  # 是否使用数据增强
         self.random_crop = False  # 是否使用随机裁剪
         self.crop_size = 94  # 裁剪大小
         self.random_scale = True  # 是否使用随机缩放
-        self.scale_range = [0.95, 1.05]  # 缩放范围
+        self.scale_range = [0.9, 1.1]  # 缩放范围
         self.random_rotation = True  # 是否使用随机旋转
-        self.rotation_range = [-2, 2]  # 旋转角度范围
+        self.rotation_range = [-3, 3]  # 旋转角度范围
+        self.random_horizontal_flip = False  # 是否使用随机水平翻转
         
         # 光流特征增强配置
         self.optical_flow_type = 'tv_l1'  # 光流类型: 'farneback', 'tv_l1'
@@ -77,7 +78,10 @@ class Config:
         self.scheduler_name = 'cosine'  # 调度器名称: 'cosine', 'step', 'reduce_lr_on_plateau'
         self.cosine_t_max = self.num_epochs  # CosineAnnealingLR的T_max参数
         self.step_size = 10  # StepLR的step_size参数
-        self.gamma = 0.1  # StepLR的gamma参数
+        self.gamma = 0.5  # StepLR的gamma参数
+        self.use_warmup = True  # 是否使用学习率warmup
+        self.warmup_epochs = 10  # warmup的轮数
+        self.warmup_start_lr = 1e-6  # warmup的起始学习率
         
         # 模型配置
         self.model_name = 'resnet3d18'  # 模型名称: 'resnet3d18', 'resnet3d50'
@@ -95,6 +99,6 @@ class Config:
         self.save_checkpoint_freq = 10  # 检查点保存频率
         
         # 其他配置
-        self.seed = 131  # 随机种子
+        self.seed = 42  # 随机种子
         self.deterministic = False  # 是否启用完全可复现模式（会降低训练速度）
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'  # 设备
