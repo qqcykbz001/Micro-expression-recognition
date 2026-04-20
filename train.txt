@@ -1,0 +1,1 @@
+C:\Users\cccycym\.conda\envs\face_env\python.exe c:/Users/cccycym/Desktop/Micro-expression-recognition/train.py

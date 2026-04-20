@@ -11,7 +11,7 @@ class Config:
     """训练配置类"""
     def __init__(self):
         # 数据集配置
-        self.dataset_name = 'samm'  # 数据集名称: 'casme2', 'samm'
+        self.dataset_name = 'casme2'  # 数据集名称: 'casme2', 'samm'
         self.dataset_roots = {
             'casme2': 'CASME2/CASME2_Cropped',
             'samm': 'SAMM/SAMM_Cropped'
@@ -29,8 +29,8 @@ class Config:
         
         # 训练配置
         self.batch_size = 4  # 批次大小
-        self.num_epochs = 50  # 训练轮数
-        self.learning_rate = 1e-4  # 学习率
+        self.num_epochs = 60  # 训练轮数
+        self.learning_rate = 1e-2  # 学习率
         self.accumulation_steps = 1  # 梯度累积步数
         self.use_amp = True  # 是否使用混合精度训练
         self.num_workers = 4  # DataLoader 并行进程数
@@ -41,31 +41,31 @@ class Config:
         self.loss_name = 'focal'  # 损失函数名称: 'focal', 'cross_entropy'
         self.focal_alpha = [1.0, 2.0, 0.8]  # Focal Loss的alpha参数
         self.focal_gamma = 1.5  # Focal Loss的gamma参数
-        self.label_smoothing = 0.05  # 标签平滑系数 (提升泛化能力)
+        self.label_smoothing = 0.1  # 标签平滑系数 (提升泛化能力)
         self.use_dynamic_alpha = True  # 是否使用动态计算的alpha值
         
         # 优化器配置
-        self.optimizer_name = 'adamw'  # 优化器名称: 'sgd', 'adamw'
+        self.optimizer_name = 'sgd'  # 优化器名称: 'sgd', 'adamw'
         self.sgd_momentum = 0.9  # SGD的动量参数
-        self.weight_decay = 1e-4  # 权重衰减参数
+        self.weight_decay = 1e-3  # 权重衰减参数
         self.adamw_beta1 = 0.9  # AdamW的beta1参数
         self.adamw_beta2 = 0.999  # AdamW的beta2参数
         self.adamw_eps = 1e-8  # AdamW的epsilon参数
         
         # 正则化配置
         self.use_dropout = True  # 是否使用dropout
-        self.dropout_rate = 0.6  # Dropout概率
+        self.dropout_rate = 0.5  # Dropout概率
         self.use_batch_norm = True  # 是否使用批量归一化
         
         # 数据增强配置
         self.use_data_augmentation = True  # 是否使用数据增强
-        self.random_crop = False  # 是否使用随机裁剪
-        self.crop_size = 94  # 裁剪大小
+        self.random_crop = True  # 是否使用随机裁剪
+        self.crop_size = 107  # 裁剪大小
         self.random_scale = True  # 是否使用随机缩放
         self.scale_range = [0.9, 1.1]  # 缩放范围
         self.random_rotation = True  # 是否使用随机旋转
         self.rotation_range = [-3, 3]  # 旋转角度范围
-        self.random_horizontal_flip = False  # 是否使用随机水平翻转
+        self.random_horizontal_flip = True  # 是否使用随机水平翻转
         
         # 光流特征增强配置
         self.optical_flow_type = 'tv_l1'  # 光流类型: 'farneback', 'tv_l1'
@@ -75,16 +75,20 @@ class Config:
         self.use_two_stream = True  # 是否使用双流法
         
         # 学习率调度器配置
-        self.scheduler_name = 'cosine'  # 调度器名称: 'cosine', 'step', 'reduce_lr_on_plateau'
-        self.cosine_t_max = self.num_epochs  # CosineAnnealingLR的T_max参数
-        self.step_size = 10  # StepLR的step_size参数
-        self.gamma = 0.5  # StepLR的gamma参数
         self.use_warmup = True  # 是否使用学习率warmup
         self.warmup_epochs = 10  # warmup的轮数
-        self.warmup_start_lr = 1e-6  # warmup的起始学习率
+        self.warmup_start_lr = self.learning_rate / self.warmup_epochs  # warmup的起始学习率
+        self.scheduler_name = 'cosine'  # 调度器名称: 'cosine', 'step', 'reduce_lr_on_plateau'
+        if self.use_warmup:
+            self.cosine_t_max = self.num_epochs - self.warmup_epochs  # CosineAnnealingLR的T_max参数
+        else:
+            self.cosine_t_max = self.num_epochs  # CosineAnnealingLR的T_max参数
+        self.step_size = 10  # StepLR的step_size参数
+        self.gamma = 0.5  # StepLR的gamma参数
+        
         
         # 模型配置
-        self.model_name = 'resnet3d18'  # 模型名称: 'resnet3d18', 'resnet3d50'
+        self.model_name = 'resnet3d18'  # 模型名称: 'resnet3d18', 'resnet3d34'
         self.use_attention = True  # 是否使用注意力机制
         self.attention_type = 'cbam'  # 注意力类型: 'cbam', 'self'
         self.pretrained = False  # 是否使用预训练权重

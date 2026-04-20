@@ -108,8 +108,9 @@ def main():
     subjects = sorted([f for f in os.listdir(root_dir) if os.path.isdir(os.path.join(root_dir, f))])
     log(f'发现 {len(subjects)} 个受试者: {subjects}')
 
-    # 存储每次验证的准确率和UF1
+    # 存储每次验证的准确率、UAR和UF1
     accuracies = []
+    uar_scores = []
     uf1_scores = []
     valid_subjects = []
     
@@ -423,11 +424,15 @@ def main():
         plot_training_metrics(train_losses, train_accuracies, test_accuracies, test_uar_scores, test_uf1s, learning_rates, i + 1,
                               config.figure_dir, dataset_name=config.dataset_name)
 
-        # 计算最佳UF1分数
+        # 计算最佳UF1和UAR分数
         if test_uf1s:
             best_uf1 = max(test_uf1s)
         else:
             best_uf1 = 0.0
+        if test_uar_scores:
+            best_uar = max(test_uar_scores)
+        else:
+            best_uar = 0.0
 
         # 收集该fold的最佳模型的预测结果
         # 重新加载最佳模型并测试
@@ -441,19 +446,23 @@ def main():
             all_predicted.extend(fold_predicted)
 
         accuracies.append(best_accuracy)
+        uar_scores.append(best_uar)
         uf1_scores.append(best_uf1)
         valid_subjects.append(test_subject)
-        log(f'epoch {i + 1} 完成 最佳Acc: {best_accuracy:.3f}%, 最佳 UF1: {best_uf1:.3f}%')
+        log(f'epoch {i + 1} 完成 最佳Acc: {best_accuracy:.3f}%, 最佳 UAR: {best_uar:.3f}%, 最佳 UF1: {best_uf1:.3f}%')
 
     if accuracies:
         avg_acc = np.mean(accuracies)
         std_acc = np.std(accuracies)
+        avg_uar = np.mean(uar_scores)
+        std_uar = np.std(uar_scores)
         avg_uf1 = np.mean(uf1_scores)
         std_uf1 = np.std(uf1_scores)
 
         log("=" * 30 + f" LOSO 交叉验证最终总结 ({config.dataset_name}) " + "=" * 30, level="SUCCESS")
         log(f"总计 Fold 数: {len(accuracies)}")
         log(f"平均准确率 (Mean Acc): {avg_acc:.3f}% (±{std_acc:.3f}%)")
+        log(f"平均 UAR (Mean UAR): {avg_uar:.3f}% (±{std_uar:.3f}%)")
         log(f"平均 UF1 分数 (Mean UF1): {avg_uf1:.3f}% (±{std_uf1:.3f}%)")
         log("-" * 74)
         
@@ -480,12 +489,14 @@ def main():
         results_df = pd.DataFrame({
             'Fold': valid_subjects,
             'Accuracy': accuracies,
+            'UAR': uar_scores,
             'UF1': uf1_scores
         })
         # 计算平均值和标准差
         summary_row = pd.DataFrame({
             'Fold': ['Average', 'Std'],
             'Accuracy': [avg_acc, std_acc],
+            'UAR': [avg_uar, std_uar],
             'UF1': [avg_uf1, std_uf1]
         })
         results_df = pd.concat([results_df, summary_row], ignore_index=True)
