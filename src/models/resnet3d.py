@@ -152,7 +152,7 @@ class CBAM(nn.Module):
 
 class ResNet3D(nn.Module):
     """3D ResNet模型"""
-    def __init__(self, block, layers, num_classes=10, use_attention=True, attention_type='cbam', use_dropout=True, dropout_rate=0.5, input_channels=3, use_batch_norm=True):
+    def __init__(self, block, layers, num_classes=10, use_attention=True, attention_type='cbam', use_dropout=True, dropout_rate=0.5, input_channels=3, use_batch_norm=True, config=None):
         super(ResNet3D, self).__init__()
         self.in_channels = 64
         self.use_attention = use_attention
@@ -161,6 +161,7 @@ class ResNet3D(nn.Module):
         self.dropout_rate = dropout_rate
         self.use_batch_norm = use_batch_norm
         self.input_channels = input_channels
+        self.config = config
         
         # 检查是否使用双流法
         self.use_two_stream = input_channels == 4
@@ -176,7 +177,9 @@ class ResNet3D(nn.Module):
             self.flow_bn1 = nn.BatchNorm3d(32) if use_batch_norm else nn.Identity()
             
             # 动态权重模块
-            self.flow_weight = nn.Parameter(torch.tensor(0.5))  # 初始权重为0.5
+            # 从config中读取初始权重，默认为0.5
+            initial_flow_weight = getattr(config, 'flow_weight_initial', 0.5) if config else 0.5
+            self.flow_weight = nn.Parameter(torch.tensor(initial_flow_weight))  # 初始权重
             
             # 融合后的通道数
             self.in_channels = 64
@@ -261,9 +264,9 @@ class ResNet3D(nn.Module):
         return x
 
 # 预定义不同深度的3D ResNet模型
-def resnet3d18(num_classes=10, use_attention=True, attention_type='cbam', pretrained=False, use_dropout=True, dropout_rate=0.5, input_channels=3, use_batch_norm=True):
+def resnet3d18(num_classes=10, use_attention=True, attention_type='cbam', pretrained=False, use_dropout=True, dropout_rate=0.5, input_channels=3, use_batch_norm=True, config=None):
     """3D ResNet-18模型"""
-    model = ResNet3D(BasicBlock3D, [2, 2, 2, 2], num_classes, use_attention, attention_type, use_dropout, dropout_rate, input_channels, use_batch_norm)
+    model = ResNet3D(BasicBlock3D, [2, 2, 2, 2], num_classes, use_attention, attention_type, use_dropout, dropout_rate, input_channels, use_batch_norm, config)
     if pretrained:
         try:
             # 尝试使用PyTorch Video库加载预训练权重
@@ -293,9 +296,10 @@ def resnet3d18(num_classes=10, use_attention=True, attention_type='cbam', pretra
             log("使用随机初始化。")
     return model
 
-def resnet3d34(num_classes=10, use_attention=True, attention_type='cbam', pretrained=False, use_dropout=True, dropout_rate=0.5, input_channels=3, use_batch_norm=True):
+
+def resnet3d34(num_classes=10, use_attention=True, attention_type='cbam', pretrained=False, use_dropout=True, dropout_rate=0.5, input_channels=3, use_batch_norm=True, config=None):
     """3D ResNet-34模型"""
-    model = ResNet3D(BasicBlock3D, [3, 4, 6, 3], num_classes, use_attention, attention_type, use_dropout, dropout_rate, input_channels, use_batch_norm)
+    model = ResNet3D(BasicBlock3D, [3, 4, 6, 3], num_classes, use_attention, attention_type, use_dropout, dropout_rate, input_channels, use_batch_norm, config)
     if pretrained:
         try:
             # 尝试使用PyTorch Video库加载预训练权重
@@ -325,9 +329,10 @@ def resnet3d34(num_classes=10, use_attention=True, attention_type='cbam', pretra
             log("使用随机初始化。")
     return model
 
-def resnet3d50(num_classes=10, use_attention=True, attention_type='cbam', pretrained=False, use_dropout=True, dropout_rate=0.5, input_channels=3, use_batch_norm=True):
+
+def resnet3d50(num_classes=10, use_attention=True, attention_type='cbam', pretrained=False, use_dropout=True, dropout_rate=0.5, input_channels=3, use_batch_norm=True, config=None):
     """3D ResNet-50模型"""
-    model = ResNet3D(Bottleneck3D, [3, 4, 6, 3], num_classes, use_attention, attention_type, use_dropout, dropout_rate, input_channels, use_batch_norm)
+    model = ResNet3D(Bottleneck3D, [3, 4, 6, 3], num_classes, use_attention, attention_type, use_dropout, dropout_rate, input_channels, use_batch_norm, config)
     if pretrained:
         try:
             # 尝试使用PyTorch Video库加载预训练权重
@@ -357,9 +362,10 @@ def resnet3d50(num_classes=10, use_attention=True, attention_type='cbam', pretra
             log("使用随机初始化。")
     return model
 
-def resnet3d101(num_classes=10, use_attention=True, attention_type='cbam', pretrained=False, use_dropout=True, dropout_rate=0.5, input_channels=3, use_batch_norm=True):
+
+def resnet3d101(num_classes=10, use_attention=True, attention_type='cbam', pretrained=False, use_dropout=True, dropout_rate=0.5, input_channels=3, use_batch_norm=True, config=None):
     """3D ResNet-101模型"""
-    model = ResNet3D(Bottleneck3D, [3, 4, 23, 3], num_classes, use_attention, attention_type, use_dropout, dropout_rate, input_channels, use_batch_norm)
+    model = ResNet3D(Bottleneck3D, [3, 4, 23, 3], num_classes, use_attention, attention_type, use_dropout, dropout_rate, input_channels, use_batch_norm, config)
     if pretrained:
         try:
             # 尝试使用PyTorch Video库加载预训练权重
@@ -389,9 +395,10 @@ def resnet3d101(num_classes=10, use_attention=True, attention_type='cbam', pretr
             log("使用随机初始化。")
     return model
 
-def resnet3d152(num_classes=10, use_attention=True, attention_type='cbam', pretrained=False, use_dropout=True, dropout_rate=0.5, input_channels=3, use_batch_norm=True):
+
+def resnet3d152(num_classes=10, use_attention=True, attention_type='cbam', pretrained=False, use_dropout=True, dropout_rate=0.5, input_channels=3, use_batch_norm=True, config=None):
     """3D ResNet-152模型"""
-    model = ResNet3D(Bottleneck3D, [3, 8, 36, 3], num_classes, use_attention, attention_type, use_dropout, dropout_rate, input_channels, use_batch_norm)
+    model = ResNet3D(Bottleneck3D, [3, 8, 36, 3], num_classes, use_attention, attention_type, use_dropout, dropout_rate, input_channels, use_batch_norm, config)
     if pretrained:
         try:
             # 尝试使用PyTorch Video库加载预训练权重

@@ -177,7 +177,8 @@ def main():
                 use_dropout=config.use_dropout,
                 dropout_rate=config.dropout_rate,
                 input_channels=input_channels,
-                use_batch_norm=config.use_batch_norm
+                use_batch_norm=config.use_batch_norm,
+                config=config
             ).to(device)
         elif config.model_name == 'resnet3d34':
             log(f'创建模型: 3D ResNet-34')
@@ -189,7 +190,8 @@ def main():
                 use_dropout=config.use_dropout,
                 dropout_rate=config.dropout_rate,
                 input_channels=input_channels,
-                use_batch_norm=config.use_batch_norm
+                use_batch_norm=config.use_batch_norm,
+                config=config
             ).to(device)
         elif config.model_name == 'resnet3d50':
             log(f'创建模型: 3D ResNet-50')
@@ -201,7 +203,8 @@ def main():
                 use_dropout=config.use_dropout,
                 dropout_rate=config.dropout_rate,
                 input_channels=input_channels,
-                use_batch_norm=config.use_batch_norm
+                use_batch_norm=config.use_batch_norm,
+                config=config
             ).to(device)
         else:
             log(f'模型名称 {config.model_name} 不支持，使用默认模型: 3D ResNet-50')
@@ -213,7 +216,8 @@ def main():
                 use_dropout=config.use_dropout,
                 dropout_rate=config.dropout_rate,
                 input_channels=input_channels,
-                use_batch_norm=config.use_batch_norm
+                use_batch_norm=config.use_batch_norm,
+                config=config
             ).to(device)
         log(f'注意力配置: use_attention={config.use_attention}, attention_type={config.attention_type}')
         log(f'正则化配置: dropout={config.use_dropout}, dropout_rate={config.dropout_rate}, batch_norm={config.use_batch_norm}')
