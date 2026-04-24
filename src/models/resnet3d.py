@@ -154,7 +154,6 @@ class ResNet3D(nn.Module):
     """3D ResNet模型"""
     def __init__(self, block, layers, num_classes=10, use_attention=True, attention_type='cbam', use_dropout=True, dropout_rate=0.5, input_channels=3, use_batch_norm=True, config=None):
         super(ResNet3D, self).__init__()
-        self.in_channels = 64
         self.use_attention = use_attention
         self.attention_type = attention_type
         self.use_dropout = use_dropout
@@ -167,58 +166,89 @@ class ResNet3D(nn.Module):
         self.use_two_stream = input_channels == 4
         
         if self.use_two_stream:
-            # 双流法：分别处理灰度流和光流
-            # 灰度流 (1通道)
-            self.gray_conv1 = nn.Conv3d(1, 32, kernel_size=7, stride=2, padding=3, bias=False)
-            self.gray_bn1 = nn.BatchNorm3d(32) if use_batch_norm else nn.Identity()
+            # Late Fusion: 两个独立的网络分支
+            # 灰度流分支 (3通道，通过复制实现)
+            self.gray_in_channels = 64
+            self.gray_conv1 = nn.Conv3d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
+            self.gray_bn1 = nn.BatchNorm3d(64) if use_batch_norm else nn.Identity()
+            self.gray_relu = nn.ReLU(inplace=True)
+            self.gray_maxpool = nn.MaxPool3d(kernel_size=3, stride=2, padding=1)
+            self.gray_layer1 = self._make_layer(block, 64, layers[0], stride=1, in_channels=64)
+            self.gray_layer2 = self._make_layer(block, 128, layers[1], stride=2, in_channels=64 * block.expansion)
+            self.gray_layer3 = self._make_layer(block, 256, layers[2], stride=2, in_channels=128 * block.expansion)
+            self.gray_layer4 = self._make_layer(block, 512, layers[3], stride=2, in_channels=256 * block.expansion)
             
-            # 光流 (3通道)
-            self.flow_conv1 = nn.Conv3d(3, 32, kernel_size=7, stride=2, padding=3, bias=False)
-            self.flow_bn1 = nn.BatchNorm3d(32) if use_batch_norm else nn.Identity()
+            # 光流分支 (3通道)
+            self.flow_in_channels = 64
+            self.flow_conv1 = nn.Conv3d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
+            self.flow_bn1 = nn.BatchNorm3d(64) if use_batch_norm else nn.Identity()
+            self.flow_relu = nn.ReLU(inplace=True)
+            self.flow_maxpool = nn.MaxPool3d(kernel_size=3, stride=2, padding=1)
+            self.flow_layer1 = self._make_layer(block, 64, layers[0], stride=1, in_channels=64)
+            self.flow_layer2 = self._make_layer(block, 128, layers[1], stride=2, in_channels=64 * block.expansion)
+            self.flow_layer3 = self._make_layer(block, 256, layers[2], stride=2, in_channels=128 * block.expansion)
+            self.flow_layer4 = self._make_layer(block, 512, layers[3], stride=2, in_channels=256 * block.expansion)
             
-            # 动态权重模块
-            # 从config中读取初始权重，默认为0.5
-            initial_flow_weight = getattr(config, 'flow_weight_initial', 0.5) if config else 0.5
-            self.flow_weight = nn.Parameter(torch.tensor(initial_flow_weight))  # 初始权重
+            # 注意力模块（每个分支独立）
+            if self.use_attention:
+                if attention_type == 'cbam':
+                    self.gray_attention = CBAM(512 * block.expansion)
+                    self.flow_attention = CBAM(512 * block.expansion)
+                else:
+                    self.gray_attention = AttentionBlock(512 * block.expansion, use_batch_norm=use_batch_norm)
+                    self.flow_attention = AttentionBlock(512 * block.expansion, use_batch_norm=use_batch_norm)
             
-            # 融合后的通道数
-            self.in_channels = 64
+            # 全局平均池化
+            self.gray_avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
+            self.flow_avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
+            
+            # 特征级Gate机制融合模块
+            self.gate_fc = nn.Sequential(
+                nn.Linear(512 * block.expansion * 2, 512 * block.expansion),
+                nn.ReLU(),
+                nn.Linear(512 * block.expansion, 512 * block.expansion * 2),
+                nn.Sigmoid()
+            )
+            
+            # 融合后的全连接层
+            self.fc = nn.Linear(512 * block.expansion, num_classes)
         else:
             # 单流法
+            self.in_channels = 64
             self.conv1 = nn.Conv3d(input_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
             self.bn1 = nn.BatchNorm3d(64) if use_batch_norm else nn.Identity()
-        
-        self.relu = nn.ReLU(inplace=True)
-        self.maxpool = nn.MaxPool3d(kernel_size=3, stride=2, padding=1)
-        
-        # 残差层
-        self.layer1 = self._make_layer(block, 64, layers[0], stride=1)
-        self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
-        self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
-        
-        # 添加注意力模块
-        if self.use_attention:
-            if attention_type == 'cbam':
-                self.attention = CBAM(512 * block.expansion)
-            else:
-                self.attention = AttentionBlock(512 * block.expansion, use_batch_norm=use_batch_norm)
-        
-        # 全局平均池化和全连接层
-        self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
+            self.relu = nn.ReLU(inplace=True)
+            self.maxpool = nn.MaxPool3d(kernel_size=3, stride=2, padding=1)
+            
+            # 残差层
+            self.layer1 = self._make_layer(block, 64, layers[0], stride=1)
+            self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
+            self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
+            self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
+            
+            # 添加注意力模块
+            if self.use_attention:
+                if attention_type == 'cbam':
+                    self.attention = CBAM(512 * block.expansion)
+                else:
+                    self.attention = AttentionBlock(512 * block.expansion, use_batch_norm=use_batch_norm)
+            
+            # 全局平均池化和全连接层
+            self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
+            self.fc = nn.Linear(512 * block.expansion, num_classes)
         
         # 添加dropout层
         if self.use_dropout:
             self.dropout = nn.Dropout(p=self.dropout_rate)
-        
-        self.fc = nn.Linear(512 * block.expansion, num_classes)
     
-    def _make_layer(self, block, out_channels, blocks, stride):
+    def _make_layer(self, block, out_channels, blocks, stride, in_channels=None):
         strides = [stride] + [1] * (blocks - 1)
         layers = []
+        # 如果没有提供in_channels，使用实例的in_channels
+        current_in_channels = in_channels if in_channels is not None else self.in_channels
         for stride in strides:
-            layers.append(block(self.in_channels, out_channels, stride, use_batch_norm=self.use_batch_norm))
-            self.in_channels = out_channels * block.expansion
+            layers.append(block(current_in_channels, out_channels, stride, use_batch_norm=self.use_batch_norm))
+            current_in_channels = out_channels * block.expansion
         return nn.Sequential(*layers)
     
     def forward(self, x):
@@ -227,34 +257,62 @@ class ResNet3D(nn.Module):
             gray_stream = x[:, :1, :, :, :]  # 第0通道是灰度
             flow_stream = x[:, 1:, :, :, :]  # 第1-3通道是光流
             
-            # 处理灰度流
-            gray = self.relu(self.gray_bn1(self.gray_conv1(gray_stream)))
+            # 将灰度流单通道复制为三通道
+            gray_stream = torch.cat([gray_stream, gray_stream, gray_stream], dim=1)
             
-            # 处理光流
-            flow = self.relu(self.flow_bn1(self.flow_conv1(flow_stream)))
+            # 处理灰度流分支
+            gray = self.gray_relu(self.gray_bn1(self.gray_conv1(gray_stream)))
+            gray = self.gray_maxpool(gray)
+            gray = self.gray_layer1(gray)
+            gray = self.gray_layer2(gray)
+            gray = self.gray_layer3(gray)
+            gray = self.gray_layer4(gray)
             
-            # 计算动态权重
-            weight = torch.sigmoid(self.flow_weight)  # 确保权重在0-1之间
-            gray_weight = 1 - weight
+            # 处理光流分支
+            flow = self.flow_relu(self.flow_bn1(self.flow_conv1(flow_stream)))
+            flow = self.flow_maxpool(flow)
+            flow = self.flow_layer1(flow)
+            flow = self.flow_layer2(flow)
+            flow = self.flow_layer3(flow)
+            flow = self.flow_layer4(flow)
             
-            # 融合两个流
-            x = torch.cat([gray * gray_weight, flow * weight], dim=1)
+            # 应用注意力模块
+            if self.use_attention:
+                gray = self.gray_attention(gray)
+                flow = self.flow_attention(flow)
+            
+            # 全局平均池化
+            gray = self.gray_avgpool(gray)
+            flow = self.flow_avgpool(flow)
+            
+            # 展平特征
+            gray = gray.view(gray.size(0), -1)
+            flow = flow.view(flow.size(0), -1)
+            
+            # 特征级Gate机制融合
+            # 拼接两个流的特征作为门控输入
+            gate_input = torch.cat([gray, flow], dim=1)
+            # 计算特征级门控权重
+            gate_weights = self.gate_fc(gate_input)
+            # 分割为两个流的权重
+            gray_weights = gate_weights[:, :gray.size(1)]
+            flow_weights = gate_weights[:, gray.size(1):]
+            # 应用特征级门控权重并融合
+            x = gray * gray_weights + flow * flow_weights
         else:
             # 单流法
             x = self.relu(self.bn1(self.conv1(x)))
-        
-        x = self.maxpool(x)
-        
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-        
-        if self.use_attention:
-            x = self.attention(x)
-        
-        x = self.avgpool(x)
-        x = x.view(x.size(0), -1)
+            x = self.maxpool(x)
+            x = self.layer1(x)
+            x = self.layer2(x)
+            x = self.layer3(x)
+            x = self.layer4(x)
+            
+            if self.use_attention:
+                x = self.attention(x)
+            
+            x = self.avgpool(x)
+            x = x.view(x.size(0), -1)
         
         # 使用dropout层
         if self.use_dropout:

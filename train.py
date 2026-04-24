@@ -75,10 +75,15 @@ def seed_worker(worker_id):
 # 主函数
 def main():
     import numpy as np
+    # 生成新的随机种子
+    new_seed = np.random.randint(0, 2**31 - 1)
+    config.seed = new_seed
+    
     # 设置设备
     device = config.device
     log(f'开始训练任务，数据集: {config.dataset_name}，日志文件: {LOG_FILE}', level="SUCCESS")
     log(f'使用设备: {device}')
+    log(f'使用随机种子: {config.seed}')
     
     # 打印配置
     log_config(config)
@@ -126,8 +131,17 @@ def main():
         exclude_subjects = [test_subject]
         log(f'创建训练集，排除受试者: {exclude_subjects}')
         train_dataset = get_dataset(config, exclude_subjects=exclude_subjects, log_func=log)
+        
+        # 创建测试集配置，禁用数据增强
+        test_config = Config()
+        # 复制所有配置参数
+        for attr in dir(config):
+            if not attr.startswith('__') and not callable(getattr(config, attr)):
+                setattr(test_config, attr, getattr(config, attr))
+        # 禁用数据增强
+        test_config.use_data_augmentation = False
         log(f'创建测试集，包含受试者: {exclude_subjects}')
-        test_dataset = get_dataset(config, include_subjects=exclude_subjects, log_func=log)
+        test_dataset = get_dataset(test_config, include_subjects=exclude_subjects, log_func=log)
 
         log(f'训练集大小: {len(train_dataset)}, 测试集大小: {len(test_dataset)}')
 

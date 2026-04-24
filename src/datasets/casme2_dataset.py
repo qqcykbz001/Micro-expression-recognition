@@ -23,7 +23,9 @@ class CASME2Dataset(BaseMicroExpressionDataset):
             'sadness': 2,
             'disgust': 2,
             'anger': 2,
-            'fear': 2
+            'fear': 2,
+            'repression': 2,
+            'other': 2
         }
         
         # 获取标注文件路径 (如果config未提供，则使用默认路径)

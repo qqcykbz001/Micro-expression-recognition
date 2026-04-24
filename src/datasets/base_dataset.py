@@ -212,76 +212,66 @@ class BaseMicroExpressionDataset(Dataset):
                     contrast_params = 1.0
 
             for frame in frames:
-                # 应用裁剪
-                if crop_params:
-                    t, l, s = crop_params
-                    if len(frame.shape) == 3:
-                        frame = frame[t:t+s, l:l+s, :]
-                    else:
-                        frame = frame[t:t+s, l:l+s]
-                    frame = cv2.resize(frame, (self.width, self.height))
+                # 1. 旋转（在原始空间）
+                if rotate_params:
+                    angle = rotate_params
+                    # 获取原始帧的尺寸
+                    h, w = frame.shape[:2]
+                    M = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
+                    frame = cv2.warpAffine(frame, M, (w, h), flags=cv2.INTER_LINEAR)
                 
-                # 应用缩放
+                # 2. 缩放（在原始空间）
                 if scale_params:
                     scale = scale_params
-                    h, w = self.height, self.width
+                    h, w = frame.shape[:2]
                     new_h, new_w = int(h * scale), int(w * scale)
                     if new_h <= 0 or new_w <= 0:
                         new_h, new_w = h, w
                     frame = cv2.resize(frame, (new_w, new_h))
-                    if scale > 1:
-                        top, left = (new_h - h) // 2, (new_w - w) // 2
-                        if len(frame.shape) == 3:
-                            frame = frame[top:top+h, left:left+w, :]
-                        else:
-                            frame = frame[top:top+h, left:left+w]
-                    else:
-                        if len(frame.shape) == 3:
-                            new_frame = np.zeros((h, w, frame.shape[2]), dtype=frame.dtype)
-                            top, left = (h - new_h) // 2, (w - new_w) // 2
-                            new_frame[top:top+new_h, left:left+new_w, :] = frame
-                        else:
-                            new_frame = np.zeros((h, w), dtype=frame.dtype)
-                            top, left = (h - new_h) // 2, (w - new_w) // 2
-                            new_frame[top:top+new_h, left:left+new_w] = frame
-                        frame = new_frame
                 
-                # 应用旋转
-                if rotate_params:
-                    angle = rotate_params
-                    M = cv2.getRotationMatrix2D((self.width // 2, self.height // 2), angle, 1.0)
-                    frame = cv2.warpAffine(frame, M, (self.width, self.height), flags=cv2.INTER_LINEAR)
-                
-                # 应用水平翻转
+                # 3. 翻转（在调整尺寸之前）
                 if flip:
                     frame = cv2.flip(frame, 1)
                 
-                # 应用亮度增强
-                if brightness_params:
-                    # 转换为浮点型进行计算
+                # 4. 裁剪/填充（保留原始空间关系）
+                if crop_params:
+                    t, l, s = crop_params
+                    h, w = frame.shape[:2]
+                    # 确保裁剪区域在有效范围内
+                    t = min(t, h - s)
+                    l = min(l, w - s)
+                    t = max(0, t)
+                    l = max(0, l)
+                    
+                    if len(frame.shape) == 3:
+                        frame = frame[t:t+s, l:l+s, :]
+                    else:
+                        frame = frame[t:t+s, l:l+s]
+                
+                # 5. 调整到目标尺寸（最后调整尺寸）
+                frame = cv2.resize(frame, (self.width, self.height))
+                
+                # 6. 颜色增强（合并类型转换）
+                if brightness_params or contrast_params:
+                    # 只进行一次类型转换
                     frame = frame.astype(np.float32)
-                    # 应用亮度调整
-                    frame = frame * brightness_params
-                    # 裁剪到0-255范围
+                    
+                    # 应用对比度增强（先调整对比度）
+                    if contrast_params:
+                        # 归一化到0-1范围
+                        frame_norm = frame / 255.0
+                        # 应用对比度调整
+                        frame_norm = (frame_norm - 0.5) * contrast_params + 0.5
+                        # 转换回0-255范围
+                        frame = frame_norm * 255.0
+                    
+                    # 应用亮度增强（再调整亮度）
+                    if brightness_params:
+                        frame = frame * brightness_params
+                    
+                    # 裁剪到0-255范围并转换回uint8
                     frame = np.clip(frame, 0, 255)
                     frame = frame.astype(np.uint8)
-                
-                # 应用对比度增强
-                if contrast_params:
-                    # 转换为浮点型进行计算
-                    frame = frame.astype(np.float32)
-                    # 应用对比度调整
-                    # 先归一化到0-1范围
-                    frame = frame / 255.0
-                    # 应用对比度调整
-                    frame = (frame - 0.5) * contrast_params + 0.5
-                    # 裁剪到0-1范围
-                    frame = np.clip(frame, 0, 1)
-                    # 转换回0-255范围
-                    frame = (frame * 255).astype(np.uint8)
-                
-                # 统一调整尺寸，确保所有帧尺寸一致
-                frame = cv2.resize(frame, (self.width, self.height))
                 
                 augmented_frames.append(frame)
             return np.array(augmented_frames), flip

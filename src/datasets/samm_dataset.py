@@ -23,7 +23,9 @@ class SAMMDataset(BaseMicroExpressionDataset):
             'sadness': 2,
             'disgust': 2,
             'anger': 2,
-            'fear': 2
+            'fear': 2,
+            'contempt': 2,
+            'other': 2
         }
         
         # 获取标注文件路径

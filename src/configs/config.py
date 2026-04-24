@@ -25,17 +25,17 @@ class Config:
         
         self.root_dir = self.dataset_roots[self.dataset_name]
         self.num_frames = 16          # 每个视频采样的帧数
-        self.height = 224             # 帧高度
-        self.width = 224              # 帧宽度
+        self.height = 112             # 帧高度
+        self.width = 112              # 帧宽度
         self.num_classes = 3          # 分类数量
         self.frame_step = 1           # 跳帧采样步长（1表示不跳帧，2表示每隔1帧取一帧）
         
         # =============================================================================
         # 训练配置
         # =============================================================================
-        self.batch_size = 16            # 批次大小
-        self.num_epochs = 60            # 训练轮数
-        self.learning_rate = 1e-2       # 学习率
+        self.batch_size = 8            # 批次大小
+        self.num_epochs = 80            # 训练轮数
+        self.learning_rate = 1e-3       # 学习率
         self.accumulation_steps = 1     # 梯度累积步数
         self.use_amp = True             # 是否使用混合精度训练
         self.num_workers = 4            # DataLoader 并行进程数
@@ -46,8 +46,8 @@ class Config:
         # 损失函数配置
         # =============================================================================
         self.loss_name = 'focal'                # 损失函数名称: 'focal', 'cross_entropy'
-        self.focal_alpha = [1.0, 1.0, 1.0]     # Focal Loss的alpha参数
-        self.focal_gamma = 1.5                  # Focal Loss的gamma参数
+        self.focal_alpha = []     # Focal Loss的alpha参数
+        self.focal_gamma = 2.0                  # Focal Loss的gamma参数
         self.label_smoothing = 0.1              # 标签平滑系数 (提升泛化能力)
         self.use_dynamic_alpha = True           # 是否使用动态计算的alpha值
         
@@ -73,25 +73,18 @@ class Config:
         # =============================================================================
         self.use_data_augmentation = True        # 是否使用数据增强
         self.random_crop = True                  # 是否使用随机裁剪
-        self.crop_size = 214                     # 裁剪大小
+        self.crop_size = 107                     # 裁剪大小
         self.random_scale = True                 # 是否使用随机缩放
-        self.scale_range = [0.95, 1.05]            # 缩放范围
         self.random_rotation = True              # 是否使用随机旋转
-        self.rotation_range = [-3, 3]            # 旋转角度范围
         self.random_horizontal_flip = True       # 是否使用随机水平翻转
         self.random_brightness = True            # 是否使用随机亮度增强
-        self.brightness_range = [0.8, 1.2]       # 亮度调整范围
         self.random_contrast = True              # 是否使用随机对比度增强
-        self.contrast_range = [0.8, 1.2]         # 对比度调整范围
         
         # =============================================================================
         # 光流和视频处理配置
         # =============================================================================
         self.optical_flow_type = 'tv_l1'     # 光流类型: 'farneback', 'tv_l1'
         self.video_magnification = True     # 是否使用视频放大
-        self.evm_amplification = 10.0        # 视频放大倍数
-        self.evm_frequency_band = [2.0, 10.0] # 视频放大的频率带（Hz）
-        self.fps = 200                       # 视频帧率（Hz）
         self.use_two_stream = True          # 是否使用双流法
         self.flow_weight_initial = 0.5      # 双流法光流权重初始值
         
@@ -136,3 +129,38 @@ class Config:
         self.seed = 42  # 随机种子
         self.deterministic = False  # 是否启用完全可复现模式（会降低训练速度）
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'  # 设备
+        
+        # =============================================================================
+        # 数据集特定参数
+        # =============================================================================
+        self._set_dataset_specific_params()
+    
+    def _set_dataset_specific_params(self):
+        """设置数据集特定的参数"""
+        if self.dataset_name == 'casme2':
+            # CASME2 数据集特定参数
+            self.scale_range = [0.95, 1.05]          # 缩放范围
+            self.rotation_range = [-3, 3]            # 旋转角度范围
+            self.brightness_range = [0.9, 1.1]       # 亮度调整范围
+            self.contrast_range = [0.9, 1.1]         # 对比度调整范围
+            self.evm_amplification = 5.0             # 视频放大倍数
+            self.evm_frequency_band = [2.0, 20.0]     # 视频放大的频率带（Hz）
+            self.fps = 200                            # 视频帧率（Hz）
+        elif self.dataset_name == 'samm':
+            # SAMM 数据集特定参数
+            self.scale_range = [0.9, 1.1]            # 缩放范围
+            self.rotation_range = [-5, 5]            # 旋转角度范围
+            self.brightness_range = [0.85, 1.15]     # 亮度调整范围
+            self.contrast_range = [0.85, 1.15]       # 对比度调整范围
+            self.evm_amplification = 8.0             # 视频放大倍数
+            self.evm_frequency_band = [2.0, 20.0]    # 视频放大的频率带（Hz）
+            self.fps = 200                           # 视频帧率（Hz）
+        else:
+            # 默认参数
+            self.scale_range = [0.95, 1.05]          # 缩放范围
+            self.rotation_range = [-3, 3]            # 旋转角度范围
+            self.brightness_range = [0.9, 1.1]       # 亮度调整范围
+            self.contrast_range = [0.9, 1.1]         # 对比度调整范围
+            self.evm_amplification = 5.0             # 视频放大倍数
+            self.evm_frequency_band = [1.0, 8.0]     # 视频放大的频率带（Hz）
+            self.fps = 200                            # 视频帧率（Hz）
