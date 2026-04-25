@@ -68,6 +68,14 @@ class BaseMicroExpressionDataset(Dataset):
             low = float(low)
             high = float(high)
             
+            # 毫秒单位转换为Hz
+            # 毫秒转Hz: Hz = 1000 / 毫秒
+            low = 1000 / low
+            high = 1000 / high
+            # 确保low < high
+            if low > high:
+                low, high = high, low
+            
             # 确保high > low > 0
             if low <= 0:
                 low = 0.1
@@ -79,10 +87,7 @@ class BaseMicroExpressionDataset(Dataset):
             # 如果频率带参数无效，使用默认值
             low = 0.1
             high = 0.3
-        
-        # 再次检查high是否大于0
-        if high <= 0:
-            high = 0.3
+            print(f"频率带参数无效，使用默认值：{low}, {high}")
         
         # 计算频率和创建带通滤波器（只计算一次）
         # 将实际频率（Hz）转换为归一化频率（0-0.5）
@@ -155,12 +160,13 @@ class BaseMicroExpressionDataset(Dataset):
         magnitude = magnitude[..., np.newaxis]
         return np.concatenate([flow, magnitude], axis=-1)
 
-    def _apply_data_augmentation(self, frames):
+    def _apply_data_augmentation(self, frames, flow_frames=None):
         """应用数据增强"""
         if not self.config or not self.config.use_data_augmentation:
-            return frames, False
+            return frames, flow_frames
         
         augmented_frames = []
+        augmented_flow_frames = [] if flow_frames is not None else None
         # 随机参数对整个序列保持一致
         crop_params = None
         scale_params = None
@@ -210,7 +216,10 @@ class BaseMicroExpressionDataset(Dataset):
                     contrast_params = np.random.uniform(*contrast_range)
                 else:
                     contrast_params = 1.0
+            
 
+
+            # 处理灰度帧
             for frame in frames:
                 # 1. 旋转（在原始空间）
                 if rotate_params:
@@ -233,7 +242,7 @@ class BaseMicroExpressionDataset(Dataset):
                 if flip:
                     frame = cv2.flip(frame, 1)
                 
-                # 4. 裁剪/填充（保留原始空间关系）
+                # 5. 裁剪/填充（保留原始空间关系）
                 if crop_params:
                     t, l, s = crop_params
                     h, w = frame.shape[:2]
@@ -248,7 +257,7 @@ class BaseMicroExpressionDataset(Dataset):
                     else:
                         frame = frame[t:t+s, l:l+s]
                 
-                # 5. 调整到目标尺寸（最后调整尺寸）
+                # 6. 调整到目标尺寸（最后调整尺寸）
                 frame = cv2.resize(frame, (self.width, self.height))
                 
                 # 6. 颜色增强（合并类型转换）
@@ -274,9 +283,66 @@ class BaseMicroExpressionDataset(Dataset):
                     frame = frame.astype(np.uint8)
                 
                 augmented_frames.append(frame)
-            return np.array(augmented_frames), flip
+            
+            # 处理光流帧
+            if flow_frames is not None:
+                for flow in flow_frames:
+                    # 1. 旋转（在原始空间）
+                    if rotate_params:
+                        angle = rotate_params
+                        # 获取原始光流的尺寸
+                        h, w = flow.shape[:2]
+                        M = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
+                        # 对光流的每个通道单独进行旋转
+                        flow_rotated = np.zeros_like(flow)
+                        for c in range(flow.shape[2]):
+                            flow_rotated[..., c] = cv2.warpAffine(flow[..., c], M, (w, h), flags=cv2.INTER_LINEAR)
+                        flow = flow_rotated
+                    
+                    # 2. 缩放（在原始空间）
+                    if scale_params:
+                        scale = scale_params
+                        h, w = flow.shape[:2]
+                        new_h, new_w = int(h * scale), int(w * scale)
+                        if new_h <= 0 or new_w <= 0:
+                            new_h, new_w = h, w
+                        flow = cv2.resize(flow, (new_w, new_h))
+                        # 缩放光流值以保持物理意义
+                        flow[..., :2] *= scale  # 只缩放x和y分量
+                    
+                    # 3. 翻转（在调整尺寸之前）
+                    if flip:
+                        flow = cv2.flip(flow, 1)
+                        # 水平翻转时光流的x分量需要取反
+                        flow[..., 0] *= -1
+                    
+                    # 4. 裁剪/填充（保留原始空间关系）
+                    if crop_params:
+                        t, l, s = crop_params
+                        h, w = flow.shape[:2]
+                        # 确保裁剪区域在有效范围内
+                        t = min(t, h - s)
+                        l = min(l, w - s)
+                        t = max(0, t)
+                        l = max(0, l)
+                        flow = flow[t:t+s, l:l+s, :]
+                    
+                    # 5. 调整到目标尺寸（最后调整尺寸）
+                    flow = cv2.resize(flow, (self.width, self.height))
+                    # 调整光流值以保持物理意义
+                    # 注意：这里不调整光流值，因为我们希望保持相对运动信息
+                    
+                    augmented_flow_frames.append(flow)
+            
+            if flow_frames is not None:
+                return np.array(augmented_frames), np.array(augmented_flow_frames)
+            else:
+                return np.array(augmented_frames), False
         except Exception as e:
-            return frames, False
+            if flow_frames is not None:
+                return frames, flow_frames
+            else:
+                return frames, False
 
     def _load_and_process_frames(self, video_path, video_name):
         """通用的加载和处理流程，子类需提供关键帧索引逻辑"""
@@ -305,8 +371,14 @@ class BaseMicroExpressionDataset(Dataset):
                 flow_frames = cached_data['flow_frames']
                 
                 # 检查flow_frames的形状是否正确
-                if flow_frames and len(flow_frames) > 0:
-                    first_flow_shape = flow_frames[0].shape
+                if flow_frames is not None and len(flow_frames) > 0:
+                    # 检查是否为numpy数组
+                    if isinstance(flow_frames, np.ndarray):
+                        first_flow_shape = flow_frames[0].shape
+                    else:
+                        # 列表形式
+                        first_flow_shape = flow_frames[0].shape
+                    
                     if len(first_flow_shape) != 3 or first_flow_shape[2] != 3:
                         # 形状不正确，重新计算
                         self.log_func(f"缓存中的光流形状不正确: {first_flow_shape}，重新计算")
@@ -406,18 +478,20 @@ class BaseMicroExpressionDataset(Dataset):
                 # 在数据增强之前应用EVM，避免增强改变运动信息
                 gray_frames = self._apply_evm(gray_frames, amplification, frequency_band, fps)
 
-        # 4. 应用数据增强
-        augmented_gray_frames, flip = self._apply_data_augmentation(gray_frames)
-
-        # 5. 光流计算
+        # 4. 计算 optical flow（在增强前）
         flow_frames = []
-        for i in range(len(augmented_gray_frames) - 1):
-            flow_frames.append(self._calculate_optical_flow(augmented_gray_frames[i], augmented_gray_frames[i+1]))
+        for i in range(len(gray_frames) - 1):
+            flow_frames.append(self._calculate_optical_flow(gray_frames[i], gray_frames[i+1]))
         
         while len(flow_frames) < self.num_frames:
             flow_frames.append(flow_frames[-1])
+
+
+
+        # 6. 数据增强（同步作用在 gray + flow）
+        augmented_gray_frames, augmented_flow_frames = self._apply_data_augmentation(gray_frames, flow_frames)
             
-        return augmented_gray_frames, flow_frames
+        return augmented_gray_frames, augmented_flow_frames
 
     def _get_sampling_start_idx(self, video_name, frame_files):
         """获取采样起始索引，默认从中间开始，子类可重写"""

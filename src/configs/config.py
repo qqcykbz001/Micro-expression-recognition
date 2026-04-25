@@ -34,20 +34,20 @@ class Config:
         # 训练配置
         # =============================================================================
         self.batch_size = 8            # 批次大小
-        self.num_epochs = 80            # 训练轮数
-        self.learning_rate = 1e-3       # 学习率
+        self.num_epochs = 50            # 训练轮数
+        self.learning_rate = 1e-2       # 学习率
         self.accumulation_steps = 1     # 梯度累积步数
         self.use_amp = True             # 是否使用混合精度训练
-        self.num_workers = 4            # DataLoader 并行进程数
+        self.num_workers = 8            # DataLoader 并行进程数
         self.persistent_workers = True  # 是否复用 DataLoader workers
-        self.prefetch_factor = 2        # 每个 worker 预取批次数
+        self.prefetch_factor = 4        # 每个 worker 预取批次数
         
         # =============================================================================
         # 损失函数配置
         # =============================================================================
         self.loss_name = 'focal'                # 损失函数名称: 'focal', 'cross_entropy'
         self.focal_alpha = []     # Focal Loss的alpha参数
-        self.focal_gamma = 2.0                  # Focal Loss的gamma参数
+        self.focal_gamma = 1.5                  # Focal Loss的gamma参数
         self.label_smoothing = 0.1              # 标签平滑系数 (提升泛化能力)
         self.use_dynamic_alpha = True           # 是否使用动态计算的alpha值
         
@@ -56,7 +56,7 @@ class Config:
         # =============================================================================
         self.optimizer_name = 'sgd'     # 优化器名称: 'sgd', 'adamw'
         self.sgd_momentum = 0.9         # SGD的动量参数
-        self.weight_decay = 1e-3        # 权重衰减参数
+        self.weight_decay = 5e-4        # 权重衰减参数
         self.adamw_beta1 = 0.9          # AdamW的beta1参数
         self.adamw_beta2 = 0.999        # AdamW的beta2参数
         self.adamw_eps = 1e-8           # AdamW的epsilon参数
@@ -65,7 +65,7 @@ class Config:
         # 正则化配置
         # =============================================================================
         self.use_dropout = True         # 是否使用dropout
-        self.dropout_rate = 0.5         # Dropout概率
+        self.dropout_rate = 0.3         # Dropout概率
         self.use_batch_norm = True      # 是否使用批量归一化
         
         # =============================================================================
@@ -73,12 +73,14 @@ class Config:
         # =============================================================================
         self.use_data_augmentation = True        # 是否使用数据增强
         self.random_crop = True                  # 是否使用随机裁剪
-        self.crop_size = 107                     # 裁剪大小
-        self.random_scale = True                 # 是否使用随机缩放
+        self.crop_size = 104                     # 裁剪大小
+        self.random_scale = False                 # 是否使用随机缩放
         self.random_rotation = True              # 是否使用随机旋转
         self.random_horizontal_flip = True       # 是否使用随机水平翻转
-        self.random_brightness = True            # 是否使用随机亮度增强
-        self.random_contrast = True              # 是否使用随机对比度增强
+        self.random_brightness = False            # 是否使用随机亮度增强
+        self.random_contrast = False              # 是否使用随机对比度增强
+
+
         
         # =============================================================================
         # 光流和视频处理配置
@@ -86,13 +88,12 @@ class Config:
         self.optical_flow_type = 'tv_l1'     # 光流类型: 'farneback', 'tv_l1'
         self.video_magnification = True     # 是否使用视频放大
         self.use_two_stream = True          # 是否使用双流法
-        self.flow_weight_initial = 0.5      # 双流法光流权重初始值
         
         # =============================================================================
         # 学习率调度器配置
         # =============================================================================
         self.use_warmup = True                      # 是否使用学习率warmup
-        self.warmup_epochs = 10                    # warmup的轮数
+        self.warmup_epochs = 5                    # warmup的轮数
         self.warmup_start_lr = self.learning_rate / self.warmup_epochs  # warmup的起始学习率
         self.scheduler_name = 'cosine'             # 调度器名称: 'cosine', 'step', 'reduce_lr_on_plateau'
         
@@ -111,6 +112,7 @@ class Config:
         self.use_attention = True       # 是否使用注意力机制
         self.attention_type = 'cbam'    # 注意力类型: 'cbam', 'self'
         self.pretrained = False          # 是否使用预训练权重
+        self.pretrained_dataset = 'kinetics400'  # 预训练数据集: 'kinetics400', 'kinetics600'
         
         # =============================================================================
         # 输出配置
@@ -121,7 +123,7 @@ class Config:
         self.figure_dir = os.path.join(self.dataset_output_dir, 'figures')  # 图表目录
         self.log_dir = os.path.join(self.dataset_output_dir, 'logs')  # 日志目录
         self.log_file = os.path.join(self.log_dir, 'training.log')  # 日志文件
-        self.save_checkpoint_freq = 10  # 检查点保存频率
+        self.save_checkpoint_freq = 100  # 检查点保存频率
         
         # =============================================================================
         # 其他配置
@@ -139,28 +141,28 @@ class Config:
         """设置数据集特定的参数"""
         if self.dataset_name == 'casme2':
             # CASME2 数据集特定参数
-            self.scale_range = [0.95, 1.05]          # 缩放范围
+            self.scale_range = [0.90, 1.10]          # 缩放范围
             self.rotation_range = [-3, 3]            # 旋转角度范围
-            self.brightness_range = [0.9, 1.1]       # 亮度调整范围
-            self.contrast_range = [0.9, 1.1]         # 对比度调整范围
-            self.evm_amplification = 5.0             # 视频放大倍数
-            self.evm_frequency_band = [2.0, 20.0]     # 视频放大的频率带（Hz）
-            self.fps = 200                            # 视频帧率（Hz）
+            self.brightness_range = [0.90, 1.10]       # 亮度调整范围
+            self.contrast_range = [0.90, 1.10]        # 对比度调整范围
+            self.evm_amplification = 6.0             # 视频放大倍数
+            self.evm_frequency_band = [50.0, 250.0]     # 视频放大的频率带（毫秒）
+            self.fps = 200                           # 视频帧率（Hz）
         elif self.dataset_name == 'samm':
             # SAMM 数据集特定参数
-            self.scale_range = [0.9, 1.1]            # 缩放范围
-            self.rotation_range = [-5, 5]            # 旋转角度范围
-            self.brightness_range = [0.85, 1.15]     # 亮度调整范围
-            self.contrast_range = [0.85, 1.15]       # 对比度调整范围
-            self.evm_amplification = 8.0             # 视频放大倍数
-            self.evm_frequency_band = [2.0, 20.0]    # 视频放大的频率带（Hz）
-            self.fps = 200                           # 视频帧率（Hz）
+            self.scale_range = [0.90, 1.10]          # 缩放范围
+            self.rotation_range = [-3, 3]            # 旋转角度范围
+            self.brightness_range = [0.90, 1.10]       # 亮度调整范围
+            self.contrast_range = [0.90, 1.10]        # 对比度调整范围
+            self.evm_amplification = 6.0             # 视频放大倍数
+            self.evm_frequency_band = [50.0, 250.0]     # 视频放大的频率带（毫秒）
+            self.fps = 200                            # 视频帧率（Hz）
         else:
             # 默认参数
             self.scale_range = [0.95, 1.05]          # 缩放范围
             self.rotation_range = [-3, 3]            # 旋转角度范围
-            self.brightness_range = [0.9, 1.1]       # 亮度调整范围
-            self.contrast_range = [0.9, 1.1]         # 对比度调整范围
+            self.brightness_range = [0.85, 1.15]       # 亮度调整范围
+            self.contrast_range = [0.7, 1.3]        # 对比度调整范围
             self.evm_amplification = 5.0             # 视频放大倍数
-            self.evm_frequency_band = [1.0, 8.0]     # 视频放大的频率带（Hz）
+            self.evm_frequency_band = [50.0, 400.0]     # 视频放大的频率带（毫秒）
             self.fps = 200                            # 视频帧率（Hz）

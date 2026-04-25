@@ -1,9 +1,5 @@
 # 微表情识别项目依赖项
 
-# 深度学习框架
-torch
-torchvision
-
 # 数值计算和数据处理
 numpy
 pandas
@@ -17,6 +13,12 @@ scikit-learn
 # 进度条和可视化
 tqdm
 matplotlib
+seaborn
 
 # 其他依赖
 Pillow
+
+# 命令行参数解析
+argparse
+
+openpyxl

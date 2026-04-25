@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from src.models.resnet3d import resnet3d18, resnet3d34, resnet3d50
+from src.models.resnet3d import resnet3d18, resnet3d34
 from src.datasets import get_dataset
 from src.utils.train_utils import train, test, FocalLoss
 from src.utils.visualization_utils import plot_training_metrics, plot_confusion_matrix
@@ -186,6 +186,7 @@ def main():
             model = resnet3d18(
                 num_classes=num_classes, 
                 pretrained=config.pretrained,
+                pretrained_dataset=getattr(config, 'pretrained_dataset', 'kinetics400'),
                 use_attention=config.use_attention,
                 attention_type=config.attention_type,
                 use_dropout=config.use_dropout,
@@ -199,32 +200,7 @@ def main():
             model = resnet3d34(
                 num_classes=num_classes, 
                 pretrained=config.pretrained,
-                use_attention=config.use_attention,
-                attention_type=config.attention_type,
-                use_dropout=config.use_dropout,
-                dropout_rate=config.dropout_rate,
-                input_channels=input_channels,
-                use_batch_norm=config.use_batch_norm,
-                config=config
-            ).to(device)
-        elif config.model_name == 'resnet3d50':
-            log(f'创建模型: 3D ResNet-50')
-            model = resnet3d50(
-                num_classes=num_classes, 
-                pretrained=config.pretrained,
-                use_attention=config.use_attention,
-                attention_type=config.attention_type,
-                use_dropout=config.use_dropout,
-                dropout_rate=config.dropout_rate,
-                input_channels=input_channels,
-                use_batch_norm=config.use_batch_norm,
-                config=config
-            ).to(device)
-        else:
-            log(f'模型名称 {config.model_name} 不支持，使用默认模型: 3D ResNet-50')
-            model = resnet3d50(
-                num_classes=num_classes, 
-                pretrained=config.pretrained,
+                pretrained_dataset=getattr(config, 'pretrained_dataset', 'kinetics400'),
                 use_attention=config.use_attention,
                 attention_type=config.attention_type,
                 use_dropout=config.use_dropout,
