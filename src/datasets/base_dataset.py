@@ -468,6 +468,14 @@ class BaseMicroExpressionDataset(Dataset):
         if len(gray_frames.shape) == 3:
             gray_frames = np.expand_dims(gray_frames, axis=-1)
 
+        # 保存原始灰度帧用于计算光流
+        original_gray_frames = gray_frames.copy()
+
+        # 4. 计算 optical flow（使用原始灰度帧，在EVM和增强前）
+        flow_frames = []
+        for i in range(len(original_gray_frames) - 1):
+            flow_frames.append(self._calculate_optical_flow(original_gray_frames[i], original_gray_frames[i+1]))
+
         # 3. 视频放大（EVM）
         if self.config:
             if hasattr(self.config, 'video_magnification') and self.config.video_magnification:
@@ -477,11 +485,6 @@ class BaseMicroExpressionDataset(Dataset):
                 
                 # 在数据增强之前应用EVM，避免增强改变运动信息
                 gray_frames = self._apply_evm(gray_frames, amplification, frequency_band, fps)
-
-        # 4. 计算 optical flow（在增强前）
-        flow_frames = []
-        for i in range(len(gray_frames) - 1):
-            flow_frames.append(self._calculate_optical_flow(gray_frames[i], gray_frames[i+1]))
         
         while len(flow_frames) < self.num_frames:
             flow_frames.append(flow_frames[-1])

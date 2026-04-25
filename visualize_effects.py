@@ -355,20 +355,24 @@ def process_video(video_path, video_name, config):
                 print(f"应用视频放大时出错: {e}")
                 magnified_frames = None
         
-        # 应用数据增强
-        augmented_gray_frames, _ = dataset._apply_data_augmentation(gray_frames if magnified_frames is None else magnified_frames)
+        # 确定用于计算光流的帧
+        pre_augmentation_frames = gray_frames
+        # pre_augmentation_frames = gray_frames if magnified_frames is None else magnified_frames
         
-        # 计算光流
+        # 计算光流（在数据增强之前）
         flow_frames = []
-        for i in range(len(augmented_gray_frames) - 1):
+        for i in range(len(pre_augmentation_frames) - 1):
             try:
-                flow = dataset._calculate_optical_flow(augmented_gray_frames[i], augmented_gray_frames[i+1])
+                flow = dataset._calculate_optical_flow(pre_augmentation_frames[i], pre_augmentation_frames[i+1])
                 flow_frames.append(flow)
             except Exception as e:
                 print(f"计算光流时出错: {e}")
                 # 使用零矩阵作为替代
                 flow = np.zeros((config.height, config.width, 3))
                 flow_frames.append(flow)
+        
+        # 应用数据增强
+        augmented_gray_frames, _ = dataset._apply_data_augmentation(pre_augmentation_frames)
         
         # 可视化效果
         visualize_frames(original_frames, augmented_gray_frames, flow_frames, magnified_frames, video_name)
