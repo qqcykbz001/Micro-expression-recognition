@@ -33,7 +33,7 @@ def visualize_optical_flow(flow, title="Optical Flow"):
     angle = np.arctan2(flow[..., 1], flow[..., 0])
     # 转换为HSV颜色空间
     hsv = np.zeros((flow.shape[0], flow.shape[1], 3), dtype=np.uint8)
-    hsv[..., 0] = angle * 180 / np.pi / 2
+    hsv[..., 0] = (angle * 180 / np.pi / 2) % 180
     hsv[..., 1] = 255
     # 对幅度进行归一化，确保可视化效果
     hsv[..., 2] = cv2.normalize(magnitude, None, 0, 255, cv2.NORM_MINMAX)
@@ -186,7 +186,8 @@ def visualize_frames(original_frames, gray_frames, flow_frames, magnified_frames
     horizontal_flow_vis = None
     vertical_flow_vis = None
     if flow_frames and len(flow_frames) > 0:
-        flow_frame = flow_frames[middle_idx]
+        flow_idx = min(middle_idx, len(flow_frames) - 1)
+        flow_frame = flow_frames[flow_idx]
         # 可视化完整光流
         flow_vis = visualize_optical_flow(flow_frame)
         cv2.imwrite(os.path.join(output_dir, 'optical_flow.jpg'), flow_vis)

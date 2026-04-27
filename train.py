@@ -232,7 +232,7 @@ def main():
                 focal_alpha = config.focal_alpha
                 log(f'使用静态 focal_alpha: {focal_alpha}')
             log(f'定义损失函数: FocalLoss(alpha={[round(a, 3) for a in focal_alpha]}, gamma={config.focal_gamma}, smoothing={config.label_smoothing})')
-            criterion = FocalLoss(alpha=focal_alpha, gamma=config.focal_gamma, label_smoothing=config.label_smoothing)
+            criterion = FocalLoss(alpha=focal_alpha, gamma=config.focal_gamma)
         elif config.loss_name == 'cross_entropy':
             log(f'定义损失函数: CrossEntropyLoss(smoothing={config.label_smoothing})')
             criterion = nn.CrossEntropyLoss(label_smoothing=config.label_smoothing)
@@ -254,7 +254,7 @@ def main():
             else:
                 focal_alpha = config.focal_alpha
                 log(f'使用静态 focal_alpha: {focal_alpha}')
-            criterion = FocalLoss(alpha=focal_alpha, gamma=config.focal_gamma, label_smoothing=config.label_smoothing)
+            criterion = FocalLoss(alpha=focal_alpha, gamma=config.focal_gamma)
         # 定义优化器
         if config.optimizer_name == 'sgd':
             log(f'定义优化器: SGD(lr={learning_rate}, momentum={config.sgd_momentum}, weight_decay={config.weight_decay})')
@@ -306,6 +306,9 @@ def main():
         best_accuracy = 0.0
         best_combined_score = 0.0
 
+        patience_counter = 0  # 早停计数器
+        early_stopping_patience = getattr(config, 'early_stopping_patience', 20)
+
         if os.path.exists(checkpoint_path):
             log(f'从 {checkpoint_path} 加载检查点...')
             checkpoint = torch.load(checkpoint_path, weights_only=True)
@@ -315,13 +318,14 @@ def main():
             start_epoch = checkpoint['epoch'] + 1
             best_accuracy = checkpoint['best_accuracy']
             best_combined_score = checkpoint.get('best_combined_score', 0.0)
+            patience_counter = checkpoint.get('patience_counter', 0)
             train_losses = checkpoint['train_losses']
             train_accuracies = checkpoint['train_accuracies']
             test_accuracies = checkpoint['test_accuracies']
             test_uar_scores = checkpoint.get('test_uar_scores', [])
             test_uf1s = checkpoint.get('test_uf1s', [])
             learning_rates = checkpoint['learning_rates']
-            log(f'检查点加载成功。从第 {start_epoch} 轮开始训练')
+            log(f'检查点加载成功。从第 {start_epoch} 轮开始训练 (早停计数: {patience_counter}/{early_stopping_patience})')
         else:
             log('未找到检查点。从头开始训练。')
             log('开始训练...')
@@ -347,7 +351,11 @@ def main():
                 model, train_loader, criterion, optimizer, device,
                 accumulation_steps=config.accumulation_steps,
                 use_amp=config.use_amp,
-                log_func=log
+                log_func=log,
+                use_mixup=config.use_mixup,
+                mixup_alpha=config.mixup_alpha,
+                grad_clip_norm=config.grad_clip_norm,
+                num_classes=config.num_classes
             )
             log(f'Epoch {epoch + 1} 训练完成: Loss={train_loss:.4f}, Acc={train_acc:.2f}%', level="SUCCESS")
 
@@ -389,11 +397,18 @@ def main():
                 best_accuracy = test_acc
                 best_uar = test_uar
                 best_uf1 = test_uf1
+                patience_counter = 0  # 有提升，重置早停计数
                 best_model_path = os.path.join(model_dir, f'best_resnet3d_model_{config.dataset_name}_fold{i + 1}.pth')
                 torch.save(model.state_dict(), best_model_path)
                 log(f'✓ 最佳模型已保存到 {best_model_path}，综合评分: {combined_score:.2f}%, 准确率: {test_acc:.2f}%, UF1: {test_uar:.2f}%, UAR:{test_uf1:.2f}%')
             else:
-                log(f'当前最佳综合评分: {best_combined_score:.2f}%,准确率: {best_accuracy:.2f}%,1: {best_uar:.2f}%, UAR:{best_uf1:.2f}%')
+                patience_counter += 1
+                log(f'当前最佳综合评分: {best_combined_score:.2f}%, 准确率: {best_accuracy:.2f}%, UAR: {best_uar:.2f}%, UF1: {best_uf1:.2f}% (早停: {patience_counter}/{early_stopping_patience})')
+
+            # 早停检查
+            if patience_counter >= early_stopping_patience:
+                log(f'早停触发! 连续 {early_stopping_patience} 轮无提升，停止训练')
+                break
 
             # 根据频率保存检查点
             if (epoch + 1) % config.save_checkpoint_freq == 0 or (epoch + 1) == num_epochs:
@@ -404,6 +419,7 @@ def main():
                     'scheduler_state_dict': scheduler.state_dict(),
                     'best_accuracy': best_accuracy,
                     'best_combined_score': best_combined_score,
+                    'patience_counter': patience_counter,
                     'train_losses': train_losses,
                     'train_accuracies': train_accuracies,
                     'test_accuracies': test_accuracies,

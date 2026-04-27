@@ -117,10 +117,10 @@ class AttentionBlock(nn.Module):
         return out
 
 class CBAM(nn.Module):
-    """Convolutional Block Attention Module (CBAM)"""
-    def __init__(self, in_channels, reduction=16):
+    """Convolutional Block Attention Module (CBAM) — 3D extension"""
+    def __init__(self, in_channels, reduction=8):
         super(CBAM, self).__init__()
-        
+
         # 通道注意力模块
         self.channel_attention = nn.Sequential(
             nn.AdaptiveAvgPool3d(1),  # 全局平均池化
@@ -129,10 +129,10 @@ class CBAM(nn.Module):
             nn.Conv3d(in_channels // reduction, in_channels, kernel_size=1, bias=False),
             nn.Sigmoid()
         )
-        
-        # 空间注意力模块
+
+        # 空间注意力模块 (3x3x3核，避免感受野过大)
         self.spatial_attention = nn.Sequential(
-            nn.Conv3d(2, 1, kernel_size=7, padding=3, bias=False),  # 7x7卷积
+            nn.Conv3d(2, 1, kernel_size=3, padding=1, bias=False),
             nn.Sigmoid()
         )
     
@@ -184,10 +184,10 @@ class ResNet3D(nn.Module):
             else:
                 # 自定义模型
                 self.gray_in_channels = 64
-                self.gray_conv1 = nn.Conv3d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
+                self.gray_conv1 = nn.Conv3d(3, 64, kernel_size=(3, 7, 7), stride=(1, 2, 2),
+                                            padding=(1, 3, 3), bias=False)
                 self.gray_bn1 = nn.BatchNorm3d(64) if use_batch_norm else nn.Identity()
                 self.gray_relu = nn.ReLU(inplace=True)
-                self.gray_maxpool = nn.MaxPool3d(kernel_size=3, stride=2, padding=1)
                 self.gray_layer1 = self._make_layer(block, 64, layers[0], stride=1, in_channels=64)
                 self.gray_layer2 = self._make_layer(block, 128, layers[1], stride=2, in_channels=64 * block.expansion)
                 self.gray_layer3 = self._make_layer(block, 256, layers[2], stride=2, in_channels=128 * block.expansion)
@@ -210,10 +210,10 @@ class ResNet3D(nn.Module):
             else:
                 # 自定义模型
                 self.flow_in_channels = 64
-                self.flow_conv1 = nn.Conv3d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
+                self.flow_conv1 = nn.Conv3d(3, 64, kernel_size=(3, 7, 7), stride=(1, 2, 2),
+                                            padding=(1, 3, 3), bias=False)
                 self.flow_bn1 = nn.BatchNorm3d(64) if use_batch_norm else nn.Identity()
                 self.flow_relu = nn.ReLU(inplace=True)
-                self.flow_maxpool = nn.MaxPool3d(kernel_size=3, stride=2, padding=1)
                 self.flow_layer1 = self._make_layer(block, 64, layers[0], stride=1, in_channels=64)
                 self.flow_layer2 = self._make_layer(block, 128, layers[1], stride=2, in_channels=64 * block.expansion)
                 self.flow_layer3 = self._make_layer(block, 256, layers[2], stride=2, in_channels=128 * block.expansion)
@@ -229,11 +229,13 @@ class ResNet3D(nn.Module):
                     self.gray_attention = AttentionBlock(512 * block.expansion, use_batch_norm=use_batch_norm)
                     self.flow_attention = AttentionBlock(512 * block.expansion, use_batch_norm=use_batch_norm)
             
-            # 特征级Gate机制融合模块
+            # 特征级Gate机制融合模块 (瓶颈压缩降低过拟合)
+            gate_in = 512 * block.expansion * 2
+            gate_bottleneck = gate_in // 8
             self.gate_fc = nn.Sequential(
-                nn.Linear(512 * block.expansion * 2, 512 * block.expansion),
+                nn.Linear(gate_in, gate_bottleneck),
                 nn.ReLU(),
-                nn.Linear(512 * block.expansion, 512 * block.expansion * 2),
+                nn.Linear(gate_bottleneck, gate_in),
                 nn.Sigmoid()
             )
             
@@ -256,11 +258,11 @@ class ResNet3D(nn.Module):
             else:
                 # 自定义模型
                 self.in_channels = 64
-                self.conv1 = nn.Conv3d(input_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
+                self.conv1 = nn.Conv3d(input_channels, 64, kernel_size=(3, 7, 7), stride=(1, 2, 2),
+                                       padding=(1, 3, 3), bias=False)
                 self.bn1 = nn.BatchNorm3d(64) if use_batch_norm else nn.Identity()
                 self.relu = nn.ReLU(inplace=True)
-                self.maxpool = nn.MaxPool3d(kernel_size=3, stride=2, padding=1)
-                
+
                 # 残差层
                 self.layer1 = self._make_layer(block, 64, layers[0], stride=1)
                 self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
@@ -326,7 +328,6 @@ class ResNet3D(nn.Module):
             else:
                 # 自定义模型
                 gray_feat = self.gray_relu(self.gray_bn1(self.gray_conv1(gray_stream)))
-                gray_feat = self.gray_maxpool(gray_feat)
                 gray_feat = self.gray_layer1(gray_feat)
                 gray_feat = self.gray_layer2(gray_feat)
                 gray_feat = self.gray_layer3(gray_feat)
@@ -351,7 +352,6 @@ class ResNet3D(nn.Module):
             else:
                 # 自定义模型
                 flow_feat = self.flow_relu(self.flow_bn1(self.flow_conv1(flow_stream)))
-                flow_feat = self.flow_maxpool(flow_feat)
                 flow_feat = self.flow_layer1(flow_feat)
                 flow_feat = self.flow_layer2(flow_feat)
                 flow_feat = self.flow_layer3(flow_feat)
@@ -391,7 +391,6 @@ class ResNet3D(nn.Module):
             else:
                 # 自定义模型
                 feat = self.relu(self.bn1(self.conv1(x)))
-                feat = self.maxpool(feat)
                 feat = self.layer1(feat)
                 feat = self.layer2(feat)
                 feat = self.layer3(feat)

@@ -176,21 +176,24 @@ class BaseMicroExpressionDataset(Dataset):
         contrast_params = None
         
         try:
-            if self.config.random_crop:
-                h, w = self.height, self.width
-                crop_size = self.config.crop_size
-                if h - crop_size > 0:
-                    top = np.random.randint(0, h - crop_size)
-                    left = np.random.randint(0, w - crop_size)
-                    crop_params = (top, left, crop_size)
-                    
+            # 1. 先确定缩放（后续crop需基于缩放后尺寸计算）
             if self.config.random_scale:
                 scale_range = getattr(self.config, 'scale_range', [0.9, 1.1])
                 if len(scale_range) == 2 and scale_range[0] > 0 and scale_range[1] > 0:
                     scale_params = np.random.uniform(*scale_range)
                 else:
                     scale_params = 1.0
-                    
+
+            # 2. 基于缩放后尺寸计算crop（避免offset在缩放后偏位或跳过裁剪）
+            if self.config.random_crop:
+                scaled_h = int(self.height * (scale_params if scale_params else 1.0))
+                scaled_w = int(self.width * (scale_params if scale_params else 1.0))
+                crop_size = self.config.crop_size
+                if scaled_h > crop_size and scaled_w > crop_size:
+                    top = np.random.randint(0, scaled_h - crop_size)
+                    left = np.random.randint(0, scaled_w - crop_size)
+                    crop_params = (top, left, crop_size)
+
             if self.config.random_rotation:
                 rotation_range = getattr(self.config, 'rotation_range', [-3, 3])
                 if len(rotation_range) == 2:
@@ -221,15 +224,7 @@ class BaseMicroExpressionDataset(Dataset):
 
             # 处理灰度帧
             for frame in frames:
-                # 1. 旋转（在原始空间）
-                if rotate_params:
-                    angle = rotate_params
-                    # 获取原始帧的尺寸
-                    h, w = frame.shape[:2]
-                    M = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
-                    frame = cv2.warpAffine(frame, M, (w, h), flags=cv2.INTER_LINEAR)
-                
-                # 2. 缩放（在原始空间）
+                # 1. 缩放（在原始空间，先缩放后旋转以减少旋转空角扩散）
                 if scale_params:
                     scale = scale_params
                     h, w = frame.shape[:2]
@@ -237,27 +232,33 @@ class BaseMicroExpressionDataset(Dataset):
                     if new_h <= 0 or new_w <= 0:
                         new_h, new_w = h, w
                     frame = cv2.resize(frame, (new_w, new_h))
-                
-                # 3. 翻转（在调整尺寸之前）
+
+                # 2. 旋转（在缩放后空间）
+                if rotate_params:
+                    angle = rotate_params
+                    h, w = frame.shape[:2]
+                    M = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
+                    frame = cv2.warpAffine(frame, M, (w, h), flags=cv2.INTER_LINEAR)
+
+                # 3. 翻转
                 if flip:
                     frame = cv2.flip(frame, 1)
-                
-                # 5. 裁剪/填充（保留原始空间关系）
+
+                # 4. 裁剪（在缩放+旋转后，可干净去除旋转空角）
                 if crop_params:
                     t, l, s = crop_params
                     h, w = frame.shape[:2]
-                    # 确保裁剪区域在有效范围内
                     t = min(t, h - s)
                     l = min(l, w - s)
                     t = max(0, t)
                     l = max(0, l)
-                    
+
                     if len(frame.shape) == 3:
                         frame = frame[t:t+s, l:l+s, :]
                     else:
                         frame = frame[t:t+s, l:l+s]
-                
-                # 6. 调整到目标尺寸（最后调整尺寸）
+
+                # 5. 调整到目标尺寸
                 frame = cv2.resize(frame, (self.width, self.height))
                 
                 # 6. 颜色增强（合并类型转换）
@@ -287,19 +288,7 @@ class BaseMicroExpressionDataset(Dataset):
             # 处理光流帧
             if flow_frames is not None:
                 for flow in flow_frames:
-                    # 1. 旋转（在原始空间）
-                    if rotate_params:
-                        angle = rotate_params
-                        # 获取原始光流的尺寸
-                        h, w = flow.shape[:2]
-                        M = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
-                        # 对光流的每个通道单独进行旋转
-                        flow_rotated = np.zeros_like(flow)
-                        for c in range(flow.shape[2]):
-                            flow_rotated[..., c] = cv2.warpAffine(flow[..., c], M, (w, h), flags=cv2.INTER_LINEAR)
-                        flow = flow_rotated
-                    
-                    # 2. 缩放（在原始空间）
+                    # 1. 缩放（在原始空间，先缩放后旋转以减少旋转空角扩散）
                     if scale_params:
                         scale = scale_params
                         h, w = flow.shape[:2]
@@ -307,136 +296,159 @@ class BaseMicroExpressionDataset(Dataset):
                         if new_h <= 0 or new_w <= 0:
                             new_h, new_w = h, w
                         flow = cv2.resize(flow, (new_w, new_h))
-                        # 缩放光流值以保持物理意义
-                        flow[..., :2] *= scale  # 只缩放x和y分量
-                    
-                    # 3. 翻转（在调整尺寸之前）
+                        flow[..., :2] *= scale
+
+                    # 2. 旋转（在缩放后空间）
+                    if rotate_params:
+                        angle = rotate_params
+                        h, w = flow.shape[:2]
+                        M = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
+                        flow_rotated = np.zeros_like(flow)
+                        for c in range(flow.shape[2]):
+                            flow_rotated[..., c] = cv2.warpAffine(flow[..., c], M, (w, h), flags=cv2.INTER_LINEAR)
+                        flow = flow_rotated
+                        # 向量方向旋转补偿：dx/dy需随图像旋转
+                        angle_rad = np.deg2rad(angle)
+                        cos_a, sin_a = np.cos(angle_rad), np.sin(angle_rad)
+                        dx = flow[..., 0].copy()
+                        dy = flow[..., 1].copy()
+                        flow[..., 0] = dx * cos_a - dy * sin_a
+                        flow[..., 1] = dx * sin_a + dy * cos_a
+
+                    # 3. 翻转
                     if flip:
                         flow = cv2.flip(flow, 1)
-                        # 水平翻转时光流的x分量需要取反
                         flow[..., 0] *= -1
-                    
-                    # 4. 裁剪/填充（保留原始空间关系）
+
+                    # 4. 裁剪（在缩放+旋转后，可干净去除旋转空角）
                     if crop_params:
                         t, l, s = crop_params
                         h, w = flow.shape[:2]
-                        # 确保裁剪区域在有效范围内
                         t = min(t, h - s)
                         l = min(l, w - s)
                         t = max(0, t)
                         l = max(0, l)
                         flow = flow[t:t+s, l:l+s, :]
-                    
-                    # 5. 调整到目标尺寸（最后调整尺寸）
+
+                    # 5. 调整到目标尺寸
+                    resize_scale = self.width / flow.shape[1] if flow.shape[1] > 0 else 1.0
                     flow = cv2.resize(flow, (self.width, self.height))
-                    # 调整光流值以保持物理意义
-                    # 注意：这里不调整光流值，因为我们希望保持相对运动信息
-                    
+                    flow[..., :2] *= resize_scale
+
                     augmented_flow_frames.append(flow)
             
             if flow_frames is not None:
                 return np.array(augmented_frames), np.array(augmented_flow_frames)
             else:
-                return np.array(augmented_frames), False
+                return np.array(augmented_frames), None
         except Exception as e:
             if flow_frames is not None:
                 return frames, flow_frames
             else:
-                return frames, False
+                return frames, None
+
+    # 缓存版本号，格式变更时递增使旧缓存自动失效
+    _CACHE_VERSION = 3
 
     def _load_and_process_frames(self, video_path, video_name):
         """通用的加载和处理流程，子类需提供关键帧索引逻辑"""
-        # 生成缓存文件名，包含EVM参数
+        # 生成缓存键（含版本号，旧版缓存自动失效）
         if self.config:
             video_magnification = getattr(self.config, 'video_magnification', False)
             evm_amplification = getattr(self.config, 'evm_amplification', 10.0)
             evm_frequency_band = getattr(self.config, 'evm_frequency_band', [0.1, 0.3])
             fps = getattr(self.config, 'fps', 30)
-            cache_filename = f"{video_name}_{self.num_frames}_{self.height}_{self.width}_{self.frame_step}_{self.config.optical_flow_type}_{self.config.use_two_stream}_{video_magnification}_{evm_amplification}_{evm_frequency_band[0]}_{evm_frequency_band[1]}_{fps}.pkl"
+            use_two_stream = getattr(self.config, 'use_two_stream', False)
+            cache_filename = (
+                f"v{self._CACHE_VERSION}_{video_name}_n{self.num_frames}_"
+                f"h{self.height}w{self.width}_s{self.frame_step}_"
+                f"{self.config.optical_flow_type}_"
+                f"{video_magnification}_{evm_amplification}_"
+                f"{evm_frequency_band[0]}_{evm_frequency_band[1]}_{fps}_"
+                f"{use_two_stream}.pkl"
+            )
         else:
-            cache_filename = f"{video_name}_{self.num_frames}_{self.height}_{self.width}_{self.frame_step}_none_false.pkl"
+            cache_filename = f"v{self._CACHE_VERSION}_{video_name}_{self.num_frames}_{self.height}_{self.width}_{self.frame_step}_none.pkl"
         cache_path = os.path.join(self.flow_cache_dir, cache_filename)
-        
+
         # 加载帧文件列表
         frame_files = sorted([f for f in os.listdir(video_path) if f.endswith(('.jpg', '.png'))])
         if not frame_files:
             return torch.zeros((1, self.num_frames, self.height, self.width))
-        
-        # 检查缓存是否存在
+
+        need_flow = self.config and self.config.use_two_stream
+
+        # 加载或计算 — 缓存只存原始数据，不含增强
         if os.path.exists(cache_path):
             try:
                 with open(cache_path, 'rb') as f:
                     cached_data = pickle.load(f)
-                augmented_gray_frames = cached_data['original_frames']
-                flow_frames = cached_data['flow_frames']
-                
-                # 检查flow_frames的形状是否正确
-                if flow_frames is not None and len(flow_frames) > 0:
-                    # 检查是否为numpy数组
-                    if isinstance(flow_frames, np.ndarray):
-                        first_flow_shape = flow_frames[0].shape
+                raw_gray_frames = cached_data['raw_gray_frames']
+                raw_flow_frames = cached_data['raw_flow_frames']
+
+                # 形状校验（仅在需要光流时）
+                if need_flow:
+                    if raw_flow_frames is None or len(raw_flow_frames) == 0:
+                        raw_gray_frames, raw_flow_frames = self._compute_raw_frames(
+                            video_path, video_name, frame_files)
                     else:
-                        # 列表形式
-                        first_flow_shape = flow_frames[0].shape
-                    
-                    if len(first_flow_shape) != 3 or first_flow_shape[2] != 3:
-                        # 形状不正确，重新计算
-                        self.log_func(f"缓存中的光流形状不正确: {first_flow_shape}，重新计算")
-                        augmented_gray_frames, flow_frames = self._compute_frames(video_path, video_name, frame_files)
-                    else:
-                        # self.log_func(f"加载光流缓存: {cache_filename}")
-                        pass
-                else:
-                    # 缓存为空，重新计算
-                    augmented_gray_frames, flow_frames = self._compute_frames(video_path, video_name, frame_files)
+                        raw_flow_frames = list(raw_flow_frames)
+                        first_shape = raw_flow_frames[0].shape
+                        if len(first_shape) != 3 or first_shape[2] != 3:
+                            self.log_func(f"缓存光流形状异常 {first_shape}，重新计算")
+                            raw_gray_frames, raw_flow_frames = self._compute_raw_frames(
+                                video_path, video_name, frame_files)
             except Exception as e:
                 self.log_func(f"缓存加载失败: {e}")
-                # 缓存加载失败，重新计算
-                augmented_gray_frames, flow_frames = self._compute_frames(video_path, video_name, frame_files)
+                raw_gray_frames, raw_flow_frames = self._compute_raw_frames(
+                    video_path, video_name, frame_files)
         else:
-            # 缓存不存在，计算光流
-            augmented_gray_frames, flow_frames = self._compute_frames(video_path, video_name, frame_files)
-            
-            # 保存到缓存
+            raw_gray_frames, raw_flow_frames = self._compute_raw_frames(
+                video_path, video_name, frame_files)
+
+            # 保存原始数据到缓存（不含增强）
             try:
                 cached_data = {
-                    'original_frames': augmented_gray_frames,
-                    'flow_frames': flow_frames
+                    'raw_gray_frames': raw_gray_frames,
+                    'raw_flow_frames': raw_flow_frames,
                 }
                 with open(cache_path, 'wb') as f:
                     pickle.dump(cached_data, f)
-                # self.log_func(f"保存光流缓存: {cache_filename}")
             except Exception as e:
                 self.log_func(f"缓存保存失败: {e}")
 
-        # 6. 归一化处理
-        # 对灰度帧进行归一化
-        normalized_gray_frames = augmented_gray_frames[:self.num_frames] / 255.0 * 2 - 1
-        # 确保有通道维度
-        if len(normalized_gray_frames.shape) == 3:
-            normalized_gray_frames = np.expand_dims(normalized_gray_frames, axis=-1)
-        
-        # 对光流进行归一化（已经在_calculate_optical_flow中处理）
-        # 将列表转换为numpy数组后再转换为张量，提高性能
-        flow_frames_np = np.array(flow_frames)
-        flow_frames_tensor = torch.tensor(flow_frames_np).permute(3, 0, 1, 2).float()
+        # --- 以下每次 __getitem__ 都实时执行 ---
 
-        if self.config and self.config.use_two_stream:
-            # 7. 合并通道
-            gray_tensor = torch.tensor(normalized_gray_frames).permute(3, 0, 1, 2).float()
-            return torch.cat([gray_tensor, flow_frames_tensor], dim=0)
-        
-        # 单流法使用灰度图
-        gray_tensor = torch.tensor(normalized_gray_frames).permute(3, 0, 1, 2).float()
+        # 数据增强（每次随机，不受缓存影响）
+        raw_gray_frames, raw_flow_frames = self._apply_data_augmentation(
+            raw_gray_frames, raw_flow_frames if need_flow else None)
+
+        # 灰度帧归一化
+        normalized_gray = raw_gray_frames[:self.num_frames].astype(np.float32)
+        normalized_gray /= np.float32(127.5)
+        normalized_gray -= np.float32(1.0)
+        if len(normalized_gray.shape) == 3:
+            normalized_gray = np.expand_dims(normalized_gray, axis=-1)
+
+        if need_flow:
+            # 光流归一化：per-sample逐通道标准化
+            flow_np = np.array(raw_flow_frames)
+            flow_mean = flow_np.mean(axis=(0, 1, 2), keepdims=True)
+            flow_std = flow_np.std(axis=(0, 1, 2), keepdims=True) + 1e-8
+            flow_np = (flow_np - flow_mean) / flow_std
+            flow_tensor = torch.tensor(flow_np).permute(3, 0, 1, 2).float()
+            gray_tensor = torch.tensor(normalized_gray).permute(3, 0, 1, 2).float()
+            return torch.cat([gray_tensor, flow_tensor], dim=0)
+
+        gray_tensor = torch.tensor(normalized_gray).permute(3, 0, 1, 2).float()
         return gray_tensor
     
-    def _compute_frames(self, video_path, video_name, frame_files):
-        """计算帧和光流"""
-        # 获取采样窗口（子类需实现或提供默认逻辑）
+    def _compute_raw_frames(self, video_path, video_name, frame_files):
+        """计算原始帧和光流（不含数据增强，增强在加载后实时应用）"""
         start_idx = self._get_sampling_start_idx(video_name, frame_files)
         needed_frames_count = self.num_frames * self.frame_step + 1
         end_idx = min(len(frame_files), start_idx + needed_frames_count)
-        
+
         selected_frames = frame_files[start_idx:end_idx]
         while len(selected_frames) < needed_frames_count:
             selected_frames.append(selected_frames[-1] if selected_frames else frame_files[0])
@@ -444,11 +456,12 @@ class BaseMicroExpressionDataset(Dataset):
         # 1. 加载原始视频帧
         original_frames = []
         for i in range(0, len(selected_frames), self.frame_step):
-            if len(original_frames) >= self.num_frames + 1: break
-            frame = Image.open(os.path.join(video_path, selected_frames[i])).resize((self.width, self.height))
-            frame_np = np.array(frame)
-            original_frames.append(frame_np)
-        
+            if len(original_frames) >= self.num_frames + 1:
+                break
+            frame = Image.open(os.path.join(video_path, selected_frames[i])).resize(
+                (self.width, self.height))
+            original_frames.append(np.array(frame))
+
         while len(original_frames) < self.num_frames + 1:
             original_frames.append(original_frames[-1])
 
@@ -456,45 +469,43 @@ class BaseMicroExpressionDataset(Dataset):
         gray_frames = []
         for frame in original_frames:
             if len(frame.shape) == 3:
-                # 彩色图像转换为灰度
                 gray_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
             else:
-                # 已经是灰度图
                 gray_frame = frame
             gray_frames.append(gray_frame)
-        
-        # 转换为numpy数组并添加通道维度
+
         gray_frames = np.array(gray_frames)
         if len(gray_frames.shape) == 3:
             gray_frames = np.expand_dims(gray_frames, axis=-1)
 
-        # 保存原始灰度帧用于计算光流
         original_gray_frames = gray_frames.copy()
 
-        # 4. 计算 optical flow（使用原始灰度帧，在EVM和增强前）
+        # 3. 计算光流（基于原始灰度帧，不受EVM影响）
+        need_flow = self.config and self.config.use_two_stream
         flow_frames = []
-        for i in range(len(original_gray_frames) - 1):
-            flow_frames.append(self._calculate_optical_flow(original_gray_frames[i], original_gray_frames[i+1]))
+        if need_flow:
+            for i in range(len(original_gray_frames) - 1):
+                flow_frames.append(
+                    self._calculate_optical_flow(original_gray_frames[i],
+                                                 original_gray_frames[i + 1]))
+            if len(flow_frames) == 0:
+                flow_frames = [np.zeros((self.height, self.width, 3), dtype=np.float32)
+                               for _ in range(self.num_frames)]
+            while len(flow_frames) < self.num_frames:
+                flow_frames.append(flow_frames[-1])
 
-        # 3. 视频放大（EVM）
+        # 4. EVM 视频放大（作用于灰度帧，光流基于未放大的帧）
         if self.config:
-            if hasattr(self.config, 'video_magnification') and self.config.video_magnification:
+            if (hasattr(self.config, 'video_magnification')
+                    and self.config.video_magnification):
                 amplification = getattr(self.config, 'evm_amplification', 10.0)
                 frequency_band = getattr(self.config, 'evm_frequency_band', [0.1, 0.3])
-                fps = getattr(self.config, 'fps', 30)  # 获取帧率，默认30fps
-                
-                # 在数据增强之前应用EVM，避免增强改变运动信息
-                gray_frames = self._apply_evm(gray_frames, amplification, frequency_band, fps)
-        
-        while len(flow_frames) < self.num_frames:
-            flow_frames.append(flow_frames[-1])
+                fps = getattr(self.config, 'fps', 30)
+                gray_frames = self._apply_evm(
+                    gray_frames, amplification, frequency_band, fps)
 
-
-
-        # 6. 数据增强（同步作用在 gray + flow）
-        augmented_gray_frames, augmented_flow_frames = self._apply_data_augmentation(gray_frames, flow_frames)
-            
-        return augmented_gray_frames, augmented_flow_frames
+        # 不在此处做增强 — 返回原始数据，增强由调用方实时应用
+        return gray_frames, flow_frames
 
     def _get_sampling_start_idx(self, video_name, frame_files):
         """获取采样起始索引，默认从中间开始，子类可重写"""
