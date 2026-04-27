@@ -15,6 +15,7 @@ from src.datasets import get_dataset
 from src.utils.train_utils import train, test, FocalLoss
 from src.utils.visualization_utils import plot_training_metrics, plot_confusion_matrix
 import time
+import copy
 import datetime
 
 # 导入配置
@@ -133,12 +134,7 @@ def main():
         train_dataset = get_dataset(config, exclude_subjects=exclude_subjects, log_func=log)
         
         # 创建测试集配置，禁用数据增强
-        test_config = Config()
-        # 复制所有配置参数
-        for attr in dir(config):
-            if not attr.startswith('__') and not callable(getattr(config, attr)):
-                setattr(test_config, attr, getattr(config, attr))
-        # 禁用数据增强
+        test_config = copy.deepcopy(config)
         test_config.use_data_augmentation = False
         log(f'创建测试集，包含受试者: {exclude_subjects}')
         test_dataset = get_dataset(test_config, include_subjects=exclude_subjects, log_func=log)
@@ -231,7 +227,7 @@ def main():
             else:
                 focal_alpha = config.focal_alpha
                 log(f'使用静态 focal_alpha: {focal_alpha}')
-            log(f'定义损失函数: FocalLoss(alpha={[round(a, 3) for a in focal_alpha]}, gamma={config.focal_gamma}, smoothing={config.label_smoothing})')
+            log(f'定义损失函数: FocalLoss(alpha={[round(a, 3) for a in focal_alpha]}, gamma={config.focal_gamma})')
             criterion = FocalLoss(alpha=focal_alpha, gamma=config.focal_gamma)
         elif config.loss_name == 'cross_entropy':
             log(f'定义损失函数: CrossEntropyLoss(smoothing={config.label_smoothing})')
@@ -305,6 +301,8 @@ def main():
         start_epoch = 0
         best_accuracy = 0.0
         best_combined_score = 0.0
+        best_uf1 = 0.0  
+        best_uar = 0.0  
 
         patience_counter = 0  # 早停计数器
         early_stopping_patience = getattr(config, 'early_stopping_patience', 20)
@@ -318,6 +316,8 @@ def main():
             start_epoch = checkpoint['epoch'] + 1
             best_accuracy = checkpoint['best_accuracy']
             best_combined_score = checkpoint.get('best_combined_score', 0.0)
+            best_uar = checkpoint.get('best_uar', 0.0)  
+            best_uf1 = checkpoint.get('best_uf1', 0.0)  
             patience_counter = checkpoint.get('patience_counter', 0)
             train_losses = checkpoint['train_losses']
             train_accuracies = checkpoint['train_accuracies']
@@ -334,7 +334,10 @@ def main():
             # 学习率warmup
             if use_warmup and epoch < warmup_epochs:
                 # 计算当前warmup学习率
-                current_lr = warmup_start_lr + epoch * warmup_step
+                if epoch == warmup_epochs - 1:
+                    current_lr = learning_rate  # 最后一轮精准落点，消除与scheduler的跳变
+                else:
+                    current_lr = warmup_start_lr + epoch * warmup_step
                 # 设置学习率
                 for param_group in optimizer.param_groups:
                     param_group['lr'] = current_lr
@@ -400,7 +403,7 @@ def main():
                 patience_counter = 0  # 有提升，重置早停计数
                 best_model_path = os.path.join(model_dir, f'best_resnet3d_model_{config.dataset_name}_fold{i + 1}.pth')
                 torch.save(model.state_dict(), best_model_path)
-                log(f'✓ 最佳模型已保存到 {best_model_path}，综合评分: {combined_score:.2f}%, 准确率: {test_acc:.2f}%, UF1: {test_uar:.2f}%, UAR:{test_uf1:.2f}%')
+                log(f'最佳模型已保存到 {best_model_path}，综合评分: {combined_score:.2f}%, 准确率: {test_acc:.2f}%, UAR: {test_uar:.2f}%, UF1: {test_uf1:.2f}%')
             else:
                 patience_counter += 1
                 log(f'当前最佳综合评分: {best_combined_score:.2f}%, 准确率: {best_accuracy:.2f}%, UAR: {best_uar:.2f}%, UF1: {best_uf1:.2f}% (早停: {patience_counter}/{early_stopping_patience})')
@@ -419,6 +422,8 @@ def main():
                     'scheduler_state_dict': scheduler.state_dict(),
                     'best_accuracy': best_accuracy,
                     'best_combined_score': best_combined_score,
+                    'best_uar': best_uar,  
+                    'best_uf1': best_uf1,  
                     'patience_counter': patience_counter,
                     'train_losses': train_losses,
                     'train_accuracies': train_accuracies,
@@ -442,23 +447,6 @@ def main():
         # 生成可视化图表
         plot_training_metrics(train_losses, train_accuracies, test_accuracies, test_uar_scores, test_uf1s, learning_rates, i + 1,
                               config.figure_dir, dataset_name=config.dataset_name)
-
-        # 计算每个epoch的综合评分
-        combined_scores = []
-        for acc, uar, uf1 in zip(test_accuracies, test_uar_scores, test_uf1s):
-            combined = (acc + uar + uf1) / 3
-            combined_scores.append(combined)
-        
-        # 计算最佳epoch（基于综合评分，与模型保存的逻辑一致）
-        if combined_scores:
-            best_epoch = combined_scores.index(max(combined_scores))
-            best_accuracy = test_accuracies[best_epoch]
-            best_uar = test_uar_scores[best_epoch] if test_uar_scores else 0.0
-            best_uf1 = test_uf1s[best_epoch] if test_uf1s else 0.0
-        else:
-            best_accuracy = 0.0
-            best_uar = 0.0
-            best_uf1 = 0.0
 
         # 收集该fold的最佳模型的预测结果
         # 重新加载最佳模型并测试

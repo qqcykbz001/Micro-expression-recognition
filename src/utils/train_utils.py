@@ -48,6 +48,8 @@ def train(model, train_loader, criterion, optimizer, device,
     correct = 0
     total = 0
     batch_count = len(train_loader)
+    if batch_count == 0:
+        return 0.0, 0.0
 
     if use_amp:
         scaler = GradScaler()
