@@ -9,7 +9,7 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 from src.models.resnet3d import resnet3d18, resnet3d34
 from src.datasets import get_dataset
 from src.utils.train_utils import train, test, FocalLoss
@@ -149,11 +149,17 @@ def main():
         generator = torch.Generator()
         generator.manual_seed(config.seed + i)
 
+        # 创建训练集采样器（有放回均衡采样，防止模型崩塌到多数类）
+        train_labels = [sample['label'] for sample in train_dataset.samples]
+        class_counts = {l: train_labels.count(l) for l in set(train_labels)}
+        sample_weights = [1.0 / class_counts[l] for l in train_labels]
+        sampler = WeightedRandomSampler(sample_weights, num_samples=len(sample_weights), replacement=True)
+
         # 创建数据加载器 (启用 pin_memory 配合 non_blocking 提升性能)
         train_loader = DataLoader(
             train_dataset,
             batch_size=batch_size,
-            shuffle=True,
+            sampler=sampler,
             pin_memory=True,
             num_workers=config.num_workers,
             persistent_workers=config.persistent_workers if config.num_workers > 0 else False,
