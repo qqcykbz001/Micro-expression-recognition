@@ -28,6 +28,9 @@ class BaseMicroExpressionDataset(Dataset):
         dataset_name = os.path.basename(self.root_dir)
         self.flow_cache_dir = os.path.join('cache', 'optical_flow', dataset_name)
         os.makedirs(self.flow_cache_dir, exist_ok=True)
+
+        # 帧文件列表缓存（避免每次 __getitem__ 都 os.listdir）
+        self._frame_files_cache = {}
         
 
 
@@ -37,6 +40,19 @@ class BaseMicroExpressionDataset(Dataset):
 
     def __len__(self):
         return len(self.samples)
+
+    def _get_frame_files(self, video_path):
+        """获取视频帧文件列表（首次扫描后缓存，避免每样本 os.listdir）"""
+        if video_path not in self._frame_files_cache:
+            try:
+                with os.scandir(video_path) as entries:
+                    self._frame_files_cache[video_path] = sorted(
+                        e.name for e in entries
+                        if e.name.endswith(('.jpg', '.png'))
+                    )
+            except OSError:
+                return []
+        return self._frame_files_cache[video_path]
 
     def __getitem__(self, idx):
         sample = self.samples[idx]
@@ -371,8 +387,8 @@ class BaseMicroExpressionDataset(Dataset):
             cache_filename = f"v{self._CACHE_VERSION}_{video_name}_{self.num_frames}_{self.height}_{self.width}_{self.frame_step}_none.pkl"
         cache_path = os.path.join(self.flow_cache_dir, cache_filename)
 
-        # 加载帧文件列表
-        frame_files = sorted([f for f in os.listdir(video_path) if f.endswith(('.jpg', '.png'))])
+        # 加载帧文件列表（首次 scandir，后续命中缓存）
+        frame_files = self._get_frame_files(video_path)
         if not frame_files:
             return torch.zeros((1, self.num_frames, self.height, self.width))
 

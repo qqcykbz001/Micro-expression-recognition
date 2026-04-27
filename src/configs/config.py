@@ -13,7 +13,7 @@ class Config:
         # =============================================================================
         # 数据集配置
         # =============================================================================
-        self.dataset_name = 'casme2'  # 数据集名称: 'casme2', 'samm'
+        self.dataset_name = 'samm'  # 数据集名称: 'casme2', 'samm'
         self.dataset_roots = {
             'casme2': 'CASME2/CASME2_Cropped',
             'samm': 'SAMM/SAMM_Cropped'
