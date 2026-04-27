@@ -162,5 +162,61 @@ def analyze_fold_distribution():
     else:
         log("未分析到任何有效fold")
 
+def calculate_global_focal_alpha():
+    """计算全局的focal_alpha值"""
+    # 初始化配置
+    config = Config()
+    
+    # 获取数据集路径
+    root_dir = config.root_dir
+    
+    if not os.path.exists(root_dir):
+        log(f"数据集路径不存在: {root_dir}")
+        return
+    
+    # 获取所有受试者列表
+    subjects = sorted([f for f in os.listdir(root_dir) if os.path.isdir(os.path.join(root_dir, f))])
+    log(f'发现 {len(subjects)} 个受试者: {subjects}')
+    
+    # 收集所有训练数据的标签
+    all_labels = []
+    
+    # 遍历所有受试者
+    for test_subject in subjects:
+        # 创建训练集（排除当前受试者）
+        exclude_subjects = [test_subject]
+        train_dataset = get_dataset(config, exclude_subjects=exclude_subjects, log_func=log)
+        
+        # 收集训练集标签
+        train_labels = [sample['label'] for sample in train_dataset.samples]
+        all_labels.extend(train_labels)
+    
+    # 统计类别分布
+    from collections import Counter
+    counts = Counter(all_labels)
+    total = len(all_labels)
+    log(f'全局训练数据总样本数: {total}')
+    log(f'全局类别分布: {dict(counts)}')
+    
+    # 计算每个类别的权重
+    weights = [total / counts.get(i, 1) if counts.get(i, 0) > 0 else 1.0 for i in range(config.num_classes)]
+    
+    # 归一化权重
+    mean_w = sum(weights) / len(weights)
+    focal_alpha = [w / mean_w for w in weights]
+    
+    log(f'\n全局focal_alpha计算结果:')
+    for cls in range(config.num_classes):
+        log(f'  类别{cls}: {focal_alpha[cls]:.4f}')
+    
+    log(f'\n推荐在config.py中设置:')
+    log(f'  self.focal_alpha = {[round(a, 4) for a in focal_alpha]}')
+    
+    return focal_alpha
+
 if __name__ == "__main__":
     analyze_fold_distribution()
+    print("\n" + "=" * 60)
+    log("计算全局focal_alpha")
+    print("=" * 60)
+    calculate_global_focal_alpha()

@@ -33,9 +33,9 @@ class Config:
         # =============================================================================
         # 训练配置
         # =============================================================================
-        self.batch_size = 8            # 批次大小
-        self.num_epochs = 50            # 训练轮数
-        self.learning_rate = 5e-3       # 学习率
+        self.batch_size = 16            # 批次大小
+        self.num_epochs = 65            # 训练轮数
+        self.learning_rate = 1e-2       # 学习率
         self.accumulation_steps = 1     # 梯度累积步数
         self.use_amp = True             # 是否使用混合精度训练
         self.num_workers = 4            # DataLoader 并行进程数
@@ -46,10 +46,10 @@ class Config:
         # 损失函数配置
         # =============================================================================
         self.loss_name = 'focal'                # 损失函数名称: 'focal', 'cross_entropy'
-        self.focal_alpha = [1.0, 1.0, 1.0]     # Focal Loss的alpha参数
-        self.focal_gamma = 1.5                  # Focal Loss的gamma参数
+        self.focal_alpha = []                   # Focal Loss的alpha参数
+        self.focal_gamma = 2.0                  # Focal Loss的gamma参数
         self.label_smoothing = 0.1              # 标签平滑系数 (提升泛化能力)
-        self.use_dynamic_alpha = True           # 是否使用动态计算的alpha值
+        self.use_dynamic_alpha = False           # 是否使用动态计算的alpha值
         
         # =============================================================================
         # 优化器配置
@@ -65,7 +65,7 @@ class Config:
         # 正则化配置
         # =============================================================================
         self.use_dropout = True         # 是否使用dropout
-        self.dropout_rate = 0.4         # Dropout概率
+        self.dropout_rate = 0.5         # Dropout概率
         self.use_batch_norm = True      # 是否使用批量归一化
         
         # =============================================================================
@@ -92,9 +92,9 @@ class Config:
         # =============================================================================
         # 学习率调度器配置
         # =============================================================================
-        self.use_warmup = False                      # 是否使用学习率warmup
+        self.use_warmup = True                      # 是否使用学习率warmup
         self.warmup_epochs = 5                    # warmup的轮数
-        self.warmup_start_lr = self.learning_rate / self.warmup_epochs  # warmup的起始学习率
+        self.warmup_start_lr = self.learning_rate * 0.1  # warmup的起始学习率
         self.scheduler_name = 'cosine'             # 调度器名称: 'cosine', 'step', 'reduce_lr_on_plateau'
         
         if self.use_warmup:
@@ -141,6 +141,7 @@ class Config:
         """设置数据集特定的参数"""
         if self.dataset_name == 'casme2':
             # CASME2 数据集特定参数
+            self.focal_alpha = [1.3205, 1.4525, 0.227]
             self.scale_range = [0.95, 1.05]          # 缩放范围
             self.rotation_range = [-3, 3]            # 旋转角度范围
             self.brightness_range = [0.90, 1.10]       # 亮度调整范围
@@ -150,6 +151,7 @@ class Config:
             self.fps = 200                           # 视频帧率（Hz）
         elif self.dataset_name == 'samm':
             # SAMM 数据集特定参数
+            self.focal_alpha = [0.9898, 1.7817, 0.2284]
             self.scale_range = [0.95, 1.05]          # 缩放范围
             self.rotation_range = [-3, 3]            # 旋转角度范围
             self.brightness_range = [0.90, 1.10]       # 亮度调整范围

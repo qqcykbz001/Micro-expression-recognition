@@ -304,6 +304,7 @@ def main():
         # 尝试加载检查点
         start_epoch = 0
         best_accuracy = 0.0
+        best_combined_score = 0.0
 
         if os.path.exists(checkpoint_path):
             log(f'从 {checkpoint_path} 加载检查点...')
@@ -313,6 +314,7 @@ def main():
             scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
             start_epoch = checkpoint['epoch'] + 1
             best_accuracy = checkpoint['best_accuracy']
+            best_combined_score = checkpoint.get('best_combined_score', 0.0)
             train_losses = checkpoint['train_losses']
             train_accuracies = checkpoint['train_accuracies']
             test_accuracies = checkpoint['test_accuracies']
@@ -378,14 +380,20 @@ def main():
             epoch_time = time.time() - epoch_start
             log(f'Epoch {epoch + 1} completed in {epoch_time:.2f} seconds')
 
-            # 保存最佳模型 - 基于准确率 (在单受试者测试集上比UAR更稳定)
-            if test_acc > best_accuracy:
+            # 计算综合评分（考虑准确率、UAR和UF1）
+            combined_score = (test_acc + test_uar + test_uf1) / 3
+            
+            # 保存最佳模型 - 基于综合评分
+            if combined_score > best_combined_score:
+                best_combined_score = combined_score
                 best_accuracy = test_acc
+                best_uar = test_uar
+                best_uf1 = test_uf1
                 best_model_path = os.path.join(model_dir, f'best_resnet3d_model_{config.dataset_name}_fold{i + 1}.pth')
                 torch.save(model.state_dict(), best_model_path)
-                log(f'✓ 最佳模型已保存到 {best_model_path}，准确率: {best_accuracy:.2f}%')
+                log(f'✓ 最佳模型已保存到 {best_model_path}，综合评分: {combined_score:.2f}%, 准确率: {test_acc:.2f}%, UF1: {test_uar:.2f}%, UAR:{test_uf1:.2f}%')
             else:
-                log(f'当前最佳准确率: {best_accuracy:.2f}%')
+                log(f'当前最佳综合评分: {best_combined_score:.2f}%,准确率: {best_accuracy:.2f}%,1: {best_uar:.2f}%, UAR:{best_uf1:.2f}%')
 
             # 根据频率保存检查点
             if (epoch + 1) % config.save_checkpoint_freq == 0 or (epoch + 1) == num_epochs:
@@ -395,6 +403,7 @@ def main():
                     'optimizer_state_dict': optimizer.state_dict(),
                     'scheduler_state_dict': scheduler.state_dict(),
                     'best_accuracy': best_accuracy,
+                    'best_combined_score': best_combined_score,
                     'train_losses': train_losses,
                     'train_accuracies': train_accuracies,
                     'test_accuracies': test_accuracies,
@@ -418,15 +427,22 @@ def main():
         plot_training_metrics(train_losses, train_accuracies, test_accuracies, test_uar_scores, test_uf1s, learning_rates, i + 1,
                               config.figure_dir, dataset_name=config.dataset_name)
 
-        # 计算最佳UF1和UAR分数
-        if test_uf1s:
-            best_uf1 = max(test_uf1s)
+        # 计算每个epoch的综合评分
+        combined_scores = []
+        for acc, uar, uf1 in zip(test_accuracies, test_uar_scores, test_uf1s):
+            combined = (acc + uar + uf1) / 3
+            combined_scores.append(combined)
+        
+        # 计算最佳epoch（基于综合评分，与模型保存的逻辑一致）
+        if combined_scores:
+            best_epoch = combined_scores.index(max(combined_scores))
+            best_accuracy = test_accuracies[best_epoch]
+            best_uar = test_uar_scores[best_epoch] if test_uar_scores else 0.0
+            best_uf1 = test_uf1s[best_epoch] if test_uf1s else 0.0
         else:
-            best_uf1 = 0.0
-        if test_uar_scores:
-            best_uar = max(test_uar_scores)
-        else:
+            best_accuracy = 0.0
             best_uar = 0.0
+            best_uf1 = 0.0
 
         # 收集该fold的最佳模型的预测结果
         # 重新加载最佳模型并测试
@@ -456,8 +472,8 @@ def main():
         log("=" * 30 + f" LOSO 交叉验证最终总结 ({config.dataset_name}) " + "=" * 30, level="SUCCESS")
         log(f"总计 Fold 数: {len(accuracies)}")
         log(f"平均准确率 (Mean Acc): {avg_acc:.3f}% (±{std_acc:.3f}%)")
-        log(f"平均 UAR (Mean UAR): {avg_uar:.3f}% (±{std_uar:.3f}%)")
         log(f"平均 UF1 分数 (Mean UF1): {avg_uf1:.3f}% (±{std_uf1:.3f}%)")
+        log(f"平均 UAR (Mean UAR): {avg_uar:.3f}% (±{std_uar:.3f}%)")
         log("-" * 74)
         
         # 汇总评估指标
@@ -471,8 +487,8 @@ def main():
         overall_uf1 = f1 * 100
         
         log(f"汇总准确率 (Overall Acc): {overall_acc:.3f}%")
-        log(f"汇总 UAR (Overall UAR): {overall_uar:.3f}%")
         log(f"汇总 UF1 (Overall UF1): {overall_uf1:.3f}%")
+        log(f"汇总 UAR (Overall UAR): {overall_uar:.3f}%")
         log("=" * 74, level="SUCCESS")
         
         # 绘制混淆矩阵
