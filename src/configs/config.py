@@ -68,7 +68,7 @@ class Config:
         self.dropout_rate = 0.3         # Dropout概率
         self.use_batch_norm = True      # 是否使用批量归一化
         self.grad_clip_norm = 1.0       # 梯度裁剪阈值 (防止3D CNN梯度爆炸)
-        self.early_stopping_patience = 20  # 早停耐心值 (轮数内无提升则停止)
+        self.early_stopping_patience = 100 # 早停耐心值 (轮数内无提升则停止)
         self.use_mixup = True           # 是否使用Mixup增强
         self.mixup_alpha = 0.2          # Mixup的Beta分布alpha参数
         

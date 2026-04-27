@@ -1,8 +1,11 @@
-/CASME2
+
 /文档
 /.vscode
 /__pycache__
 /outputs
-/SAMM
+/SAMM/SAMM
+/SAMM/SAMM_Cropped
+/CASME2/CASME2
+/CASME2/CASME2_Cropped
 /cache
 /visualization_output
