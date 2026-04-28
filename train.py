@@ -77,8 +77,8 @@ def seed_worker(worker_id):
 def main():
     import numpy as np
     # 生成新的随机种子
-    new_seed = np.random.randint(0, 2**31 - 1)
-    config.seed = new_seed
+    # new_seed = np.random.randint(0, 2**31 - 1)
+    # config.seed = new_seed
     
     # 设置设备
     device = config.device
