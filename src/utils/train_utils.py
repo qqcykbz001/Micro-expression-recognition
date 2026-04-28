@@ -1,10 +1,8 @@
 import torch
 import torch.nn as nn
 import numpy as np
-import time
 from torch.amp import autocast, GradScaler
 from sklearn.metrics import precision_recall_fscore_support
-from tqdm import tqdm
 
 class FocalLoss(nn.Module):
     """Focal Loss，兼容硬标签和Mixup软标签"""
@@ -21,10 +19,8 @@ class FocalLoss(nn.Module):
         if isinstance(self.alpha, list):
             alpha = torch.tensor(self.alpha, device=inputs.device)
             if targets.dim() == 2:
-                # Mixup软标签: [B, C]，按比例混合各类别的alpha
                 alpha_weight = (targets * alpha).sum(dim=1)
             else:
-                # 硬标签: [B]，直接索引
                 alpha_weight = alpha[targets]
         else:
             alpha_weight = self.alpha
@@ -54,80 +50,60 @@ def train(model, train_loader, criterion, optimizer, device,
     if use_amp:
         scaler = GradScaler()
 
-    with tqdm(total=batch_count, desc='Training', unit='batch') as pbar:
-        for batch_idx, (inputs, targets) in enumerate(train_loader):
-            start_time = time.time()
+    for batch_idx, (inputs, targets) in enumerate(train_loader):
+        inputs = inputs.to(device, non_blocking=True)
+        targets = targets.to(device, non_blocking=True)
 
-            inputs = inputs.to(device, non_blocking=True)
-            targets = targets.to(device, non_blocking=True)
+        if use_mixup:
+            lam = np.random.beta(mixup_alpha, mixup_alpha)
+            lam = max(lam, 1 - lam)
+            index = torch.randperm(inputs.size(0), device=device)
 
-            # --- Mixup ---
-            if use_mixup:
-                lam = np.random.beta(mixup_alpha, mixup_alpha)
-                lam = max(lam, 1 - lam)  # 保证主要成分 > 0.5
-                index = torch.randperm(inputs.size(0), device=device)
+            inputs = lam * inputs + (1 - lam) * inputs[index]
 
-                # 图像混合
-                inputs = lam * inputs + (1 - lam) * inputs[index]
+            targets_onehot = torch.zeros(targets.size(0), num_classes, device=device)
+            targets_onehot.scatter_(1, targets.unsqueeze(1), 1)
+            targets_b = targets_onehot[index]
+            targets_mixed = lam * targets_onehot + (1 - lam) * targets_b
 
-                # 标签混合为软标签
-                targets_onehot = torch.zeros(targets.size(0), num_classes, device=device)
-                targets_onehot.scatter_(1, targets.unsqueeze(1), 1)
-                targets_b = targets_onehot[index]
-                targets_mixed = lam * targets_onehot + (1 - lam) * targets_b
+            loss_targets = targets_mixed
+        else:
+            loss_targets = targets
 
-                loss_targets = targets_mixed
-            else:
-                loss_targets = targets
-
-            if use_amp:
-                with autocast(device_type='cuda'):
-                    outputs = model(inputs)
-                    loss = criterion(outputs, loss_targets)
-                    loss = loss / accumulation_steps
-
-                scaler.scale(loss).backward()
-
-                if (batch_idx + 1) % accumulation_steps == 0:
-                    # 梯度裁剪
-                    if grad_clip_norm > 0:
-                        scaler.unscale_(optimizer)
-                        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
-                    scaler.step(optimizer)
-                    scaler.update()
-                    optimizer.zero_grad()
-            else:
+        if use_amp:
+            with autocast(device_type='cuda'):
                 outputs = model(inputs)
                 loss = criterion(outputs, loss_targets)
                 loss = loss / accumulation_steps
-                loss.backward()
 
-                if (batch_idx + 1) % accumulation_steps == 0:
-                    # 梯度裁剪
-                    if grad_clip_norm > 0:
-                        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
-                    optimizer.step()
-                    optimizer.zero_grad()
+            scaler.scale(loss).backward()
 
-            running_loss += loss.item() * accumulation_steps
-            batch_time = time.time() - start_time
+            if (batch_idx + 1) % accumulation_steps == 0:
+                if grad_clip_norm > 0:
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
+        else:
+            outputs = model(inputs)
+            loss = criterion(outputs, loss_targets)
+            loss = loss / accumulation_steps
+            loss.backward()
 
-            # 准确率用硬标签计算（Mixup时也用原始targets）
-            _, predicted = outputs.max(1)
-            total += targets.size(0)
-            correct += predicted.eq(targets).sum().item()
+            if (batch_idx + 1) % accumulation_steps == 0:
+                if grad_clip_norm > 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
+                optimizer.step()
+                optimizer.zero_grad()
 
-            batch_accuracy = 100. * correct / total
-            avg_loss = running_loss / (batch_idx + 1)
-            pbar.set_postfix({
-                'Loss': f'{avg_loss:.4f}',
-                'Acc': f'{batch_accuracy:.2f}%',
-                'Time': f'{batch_time:.2f}s'
-            })
-            pbar.update(1)
+        running_loss += loss.item() * accumulation_steps
+        _, predicted = outputs.max(1)
+        total += targets.size(0)
+        correct += predicted.eq(targets).sum().item()
 
     # 处理最后不完整的 accumulation step
-    if (batch_idx + 1) % accumulation_steps != 0:
+    if batch_count > 0 and (batch_idx + 1) % accumulation_steps != 0:
         if use_amp:
             if grad_clip_norm > 0:
                 scaler.unscale_(optimizer)
@@ -141,8 +117,8 @@ def train(model, train_loader, criterion, optimizer, device,
             optimizer.step()
             optimizer.zero_grad()
 
-    epoch_accuracy = 100. * correct / total
-    epoch_loss = running_loss / batch_count
+    epoch_accuracy = 100. * correct / total if total > 0 else 0.0
+    epoch_loss = running_loss / batch_count if batch_count > 0 else 0.0
     return epoch_loss, epoch_accuracy
 
 
@@ -157,45 +133,28 @@ def test(model, test_loader, criterion, device, log_func=print):
     all_predicted = []
 
     with torch.no_grad():
-        with tqdm(total=batch_count, desc='Testing', unit='batch') as pbar:
-            for batch_idx, (inputs, targets) in enumerate(test_loader):
-                inputs = inputs.to(device, non_blocking=True)
-                targets = targets.to(device, non_blocking=True)
+        for inputs, targets in test_loader:
+            inputs = inputs.to(device, non_blocking=True)
+            targets = targets.to(device, non_blocking=True)
 
-                outputs = model(inputs)
-                loss = criterion(outputs, targets)
+            outputs = model(inputs)
+            loss = criterion(outputs, targets)
 
-                test_loss += loss.item()
-                _, predicted = outputs.max(1)
-                total += targets.size(0)
-                correct += predicted.eq(targets).sum().item()
+            test_loss += loss.item()
+            _, predicted = outputs.max(1)
+            total += targets.size(0)
+            correct += predicted.eq(targets).sum().item()
 
-                all_targets.extend(targets.cpu().numpy())
-                all_predicted.extend(predicted.cpu().numpy())
-
-                batch_accuracy = 100. * correct / total
-                avg_loss = test_loss / (batch_idx + 1)
-                pbar.set_postfix({
-                    'Loss': f'{avg_loss:.4f}',
-                    'Acc': f'{batch_accuracy:.2f}%'
-                })
-                pbar.update(1)
+            all_targets.extend(targets.cpu().numpy())
+            all_predicted.extend(predicted.cpu().numpy())
 
     if total == 0:
-        accuracy = 0.0
-        avg_loss = 0.0
-        uar = 0.0
-        uf1 = 0.0
-        log_func(f'  [Test Summary] Loss: {avg_loss:.4f}, Acc: {accuracy:.2f}%, '
-                 f'UAR: {uar:.2f}%, UF1: {uf1:.2f}% (Empty Test Set)')
-    else:
-        accuracy = 100. * correct / total
-        avg_loss = test_loss / batch_count
-        precision, recall, f1, _ = precision_recall_fscore_support(
-            all_targets, all_predicted, average='macro', zero_division=0)
-        uar = recall * 100
-        uf1 = f1 * 100
-        log_func(f'  [Test Summary] Loss: {avg_loss:.4f}, Acc: {accuracy:.2f}%, '
-                 f'UAR: {uar:.2f}%, UF1: {uf1:.2f}%')
+        return 0.0, 0.0, 0.0, [], []
 
+    accuracy = 100. * correct / total
+    avg_loss = test_loss / batch_count
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        all_targets, all_predicted, average='macro', zero_division=0)
+    uar = recall * 100
+    uf1 = f1 * 100
     return accuracy, uar, uf1, all_targets, all_predicted

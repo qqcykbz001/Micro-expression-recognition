@@ -1,19 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
-import numpy as np
-import os
-
-# 日志文件路径
-LOG_FILE = "training.log"
-
-# 日志写入函数
-def log(message):
-    """将日志写入文件"""
-    with open(LOG_FILE, "a", encoding="utf-8") as f:
-        f.write(message + "\n")
-    print(message)
 
 class BasicBlock3D(nn.Module):
     """3D ResNet的基本残差块"""
@@ -21,22 +7,19 @@ class BasicBlock3D(nn.Module):
 
     def __init__(self, in_channels, out_channels, stride=1, use_batch_norm=True):
         super(BasicBlock3D, self).__init__()
-        # 第一个卷积层
         self.conv1 = nn.Conv3d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
         self.bn1 = nn.BatchNorm3d(out_channels) if use_batch_norm else nn.Identity()
         self.relu = nn.ReLU(inplace=True)
-        # 第二个卷积层
         self.conv2 = nn.Conv3d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn2 = nn.BatchNorm3d(out_channels) if use_batch_norm else nn.Identity()
-        
-        #  shortcut连接
+
         self.shortcut = nn.Sequential()
         if stride != 1 or in_channels != out_channels:
             self.shortcut = nn.Sequential(
                 nn.Conv3d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
                 nn.BatchNorm3d(out_channels) if use_batch_norm else nn.Identity()
             )
-    
+
     def forward(self, x):
         residual = x
         out = self.relu(self.bn1(self.conv1(x)))
@@ -51,25 +34,21 @@ class Bottleneck3D(nn.Module):
 
     def __init__(self, in_channels, out_channels, stride=1, use_batch_norm=True):
         super(Bottleneck3D, self).__init__()
-        # 1x1x1卷积降维
         self.conv1 = nn.Conv3d(in_channels, out_channels, kernel_size=1, bias=False)
         self.bn1 = nn.BatchNorm3d(out_channels) if use_batch_norm else nn.Identity()
-        # 3x3x3卷积处理
         self.conv2 = nn.Conv3d(out_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
         self.bn2 = nn.BatchNorm3d(out_channels) if use_batch_norm else nn.Identity()
-        # 1x1x1卷积升维
         self.conv3 = nn.Conv3d(out_channels, out_channels * self.expansion, kernel_size=1, bias=False)
         self.bn3 = nn.BatchNorm3d(out_channels * self.expansion) if use_batch_norm else nn.Identity()
         self.relu = nn.ReLU(inplace=True)
-        
-        # shortcut连接
+
         self.shortcut = nn.Sequential()
         if stride != 1 or in_channels != out_channels * self.expansion:
             self.shortcut = nn.Sequential(
                 nn.Conv3d(in_channels, out_channels * self.expansion, kernel_size=1, stride=stride, bias=False),
                 nn.BatchNorm3d(out_channels * self.expansion) if use_batch_norm else nn.Identity()
             )
-    
+
     def forward(self, x):
         residual = x
         out = self.relu(self.bn1(self.conv1(x)))
@@ -84,75 +63,55 @@ class AttentionBlock(nn.Module):
     def __init__(self, in_channels, use_batch_norm=True):
         super(AttentionBlock, self).__init__()
         self.in_channels = in_channels
-        
-        # 自注意力机制
         self.query = nn.Conv3d(in_channels, in_channels // 8, kernel_size=1)
         self.key = nn.Conv3d(in_channels, in_channels // 8, kernel_size=1)
         self.value = nn.Conv3d(in_channels, in_channels, kernel_size=1)
         self.softmax = nn.Softmax(dim=-1)
-        
-        # 残差连接
         self.norm = nn.BatchNorm3d(in_channels) if use_batch_norm else nn.Identity()
         self.relu = nn.ReLU(inplace=True)
-    
+
     def forward(self, x):
         batch_size, channels, depth, height, width = x.size()
-        
-        # 计算query, key, value
         q = self.query(x).view(batch_size, -1, depth * height * width).permute(0, 2, 1)
         k = self.key(x).view(batch_size, -1, depth * height * width)
         v = self.value(x).view(batch_size, -1, depth * height * width)
-        
-        # 计算注意力权重
         attention = self.softmax(torch.bmm(q, k) / (self.in_channels ** 0.5))
-        
-        # 计算注意力加权的特征
         out = torch.bmm(v, attention.permute(0, 2, 1))
         out = out.view(batch_size, channels, depth, height, width)
-        
-        # 残差连接
         out = self.norm(out + x)
         out = self.relu(out)
-        
         return out
 
 class CBAM(nn.Module):
     """Convolutional Block Attention Module (CBAM) — 3D extension"""
     def __init__(self, in_channels, reduction=8):
         super(CBAM, self).__init__()
-
-        # 通道注意力模块
         self.channel_attention = nn.Sequential(
-            nn.AdaptiveAvgPool3d(1),  # 全局平均池化
+            nn.AdaptiveAvgPool3d(1),
             nn.Conv3d(in_channels, in_channels // reduction, kernel_size=1, bias=False),
             nn.ReLU(inplace=True),
             nn.Conv3d(in_channels // reduction, in_channels, kernel_size=1, bias=False),
             nn.Sigmoid()
         )
-
-        # 空间注意力模块 (3x3x3核，避免感受野过大)
         self.spatial_attention = nn.Sequential(
             nn.Conv3d(2, 1, kernel_size=3, padding=1, bias=False),
             nn.Sigmoid()
         )
-    
+
     def forward(self, x):
-        # 通道注意力
         channel_out = self.channel_attention(x)
         x = x * channel_out
-        
-        # 空间注意力
         avg_out = torch.mean(x, dim=1, keepdim=True)
         max_out, _ = torch.max(x, dim=1, keepdim=True)
         spatial_in = torch.cat([avg_out, max_out], dim=1)
         spatial_out = self.spatial_attention(spatial_in)
         x = x * spatial_out
-        
         return x
 
 class ResNet3D(nn.Module):
     """3D ResNet模型"""
-    def __init__(self, block, layers, num_classes=10, use_attention=True, attention_type='cbam', use_dropout=True, dropout_rate=0.5, input_channels=3, use_batch_norm=True, config=None, pretrained=False):
+    def __init__(self, block, layers, num_classes=10, use_attention=True, attention_type='cbam',
+                 use_dropout=True, dropout_rate=0.5, input_channels=3, use_batch_norm=True, config=None):
         super(ResNet3D, self).__init__()
         self.use_attention = use_attention
         self.attention_type = attention_type
@@ -161,66 +120,32 @@ class ResNet3D(nn.Module):
         self.use_batch_norm = use_batch_norm
         self.input_channels = input_channels
         self.config = config
-        self.pretrained = pretrained
-        
-        # 检查是否使用双流法
+
         self.use_two_stream = input_channels == 4
-        
+
         if self.use_two_stream:
-            # Late Fusion: 两个独立的网络分支
-            # 灰度流分支 (3通道，通过复制实现)
-            if pretrained and layers == [2, 2, 2, 2]:  # 仅ResNet-18使用预训练backbone
-                # 使用官方预训练模型作为backbone
-                try:
-                    from torchvision.models.video import r3d_18, R3D_18_Weights
-                    self.gray_backbone = r3d_18(weights=R3D_18_Weights.DEFAULT)
-                    # 移除分类层
-                    self.gray_backbone.fc = nn.Identity()
-                except ImportError:
-                    import torchvision.models.video as models
-                    self.gray_backbone = models.r3d_18(pretrained=True)
-                    # 移除分类层
-                    self.gray_backbone.fc = nn.Identity()
-            else:
-                # 自定义模型
-                self.gray_in_channels = 64
-                self.gray_conv1 = nn.Conv3d(3, 64, kernel_size=(3, 7, 7), stride=(1, 2, 2),
-                                            padding=(1, 3, 3), bias=False)
-                self.gray_bn1 = nn.BatchNorm3d(64) if use_batch_norm else nn.Identity()
-                self.gray_relu = nn.ReLU(inplace=True)
-                self.gray_layer1 = self._make_layer(block, 64, layers[0], stride=1, in_channels=64)
-                self.gray_layer2 = self._make_layer(block, 128, layers[1], stride=2, in_channels=64 * block.expansion)
-                self.gray_layer3 = self._make_layer(block, 256, layers[2], stride=2, in_channels=128 * block.expansion)
-                self.gray_layer4 = self._make_layer(block, 512, layers[3], stride=2, in_channels=256 * block.expansion)
-                self.gray_avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
-            
-            # 光流分支 (3通道)
-            if pretrained and layers == [2, 2, 2, 2]:  # 仅ResNet-18使用预训练backbone
-                # 使用官方预训练模型作为backbone
-                try:
-                    from torchvision.models.video import r3d_18, R3D_18_Weights
-                    self.flow_backbone = r3d_18(weights=R3D_18_Weights.DEFAULT)
-                    # 移除分类层
-                    self.flow_backbone.fc = nn.Identity()
-                except ImportError:
-                    import torchvision.models.video as models
-                    self.flow_backbone = models.r3d_18(pretrained=True)
-                    # 移除分类层
-                    self.flow_backbone.fc = nn.Identity()
-            else:
-                # 自定义模型
-                self.flow_in_channels = 64
-                self.flow_conv1 = nn.Conv3d(3, 64, kernel_size=(3, 7, 7), stride=(1, 2, 2),
-                                            padding=(1, 3, 3), bias=False)
-                self.flow_bn1 = nn.BatchNorm3d(64) if use_batch_norm else nn.Identity()
-                self.flow_relu = nn.ReLU(inplace=True)
-                self.flow_layer1 = self._make_layer(block, 64, layers[0], stride=1, in_channels=64)
-                self.flow_layer2 = self._make_layer(block, 128, layers[1], stride=2, in_channels=64 * block.expansion)
-                self.flow_layer3 = self._make_layer(block, 256, layers[2], stride=2, in_channels=128 * block.expansion)
-                self.flow_layer4 = self._make_layer(block, 512, layers[3], stride=2, in_channels=256 * block.expansion)
-                self.flow_avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
-            
-            # 注意力模块（每个分支独立）
+            # 灰度流分支
+            self.gray_conv1 = nn.Conv3d(3, 64, kernel_size=(3, 7, 7), stride=(1, 2, 2),
+                                        padding=(1, 3, 3), bias=False)
+            self.gray_bn1 = nn.BatchNorm3d(64) if use_batch_norm else nn.Identity()
+            self.gray_relu = nn.ReLU(inplace=True)
+            self.gray_layer1 = self._make_layer(block, 64, layers[0], stride=1, in_channels=64)
+            self.gray_layer2 = self._make_layer(block, 128, layers[1], stride=2, in_channels=64 * block.expansion)
+            self.gray_layer3 = self._make_layer(block, 256, layers[2], stride=2, in_channels=128 * block.expansion)
+            self.gray_layer4 = self._make_layer(block, 512, layers[3], stride=2, in_channels=256 * block.expansion)
+            self.gray_avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
+
+            # 光流分支
+            self.flow_conv1 = nn.Conv3d(3, 64, kernel_size=(3, 7, 7), stride=(1, 2, 2),
+                                        padding=(1, 3, 3), bias=False)
+            self.flow_bn1 = nn.BatchNorm3d(64) if use_batch_norm else nn.Identity()
+            self.flow_relu = nn.ReLU(inplace=True)
+            self.flow_layer1 = self._make_layer(block, 64, layers[0], stride=1, in_channels=64)
+            self.flow_layer2 = self._make_layer(block, 128, layers[1], stride=2, in_channels=64 * block.expansion)
+            self.flow_layer3 = self._make_layer(block, 256, layers[2], stride=2, in_channels=128 * block.expansion)
+            self.flow_layer4 = self._make_layer(block, 512, layers[3], stride=2, in_channels=256 * block.expansion)
+            self.flow_avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
+
             if self.use_attention:
                 if attention_type == 'cbam':
                     self.gray_attention = CBAM(512 * block.expansion)
@@ -228,8 +153,8 @@ class ResNet3D(nn.Module):
                 else:
                     self.gray_attention = AttentionBlock(512 * block.expansion, use_batch_norm=use_batch_norm)
                     self.flow_attention = AttentionBlock(512 * block.expansion, use_batch_norm=use_batch_norm)
-            
-            # 特征级Gate机制融合模块 (瓶颈压缩降低过拟合)
+
+            # Gate 融合
             gate_in = 512 * block.expansion * 2
             gate_bottleneck = gate_in // 8
             self.gate_fc = nn.Sequential(
@@ -238,185 +163,103 @@ class ResNet3D(nn.Module):
                 nn.Linear(gate_bottleneck, gate_in),
                 nn.Sigmoid()
             )
-            
-            # 融合后的全连接层
+
             self.fc = nn.Linear(512 * block.expansion, num_classes)
         else:
             # 单流法
-            if pretrained and layers == [2, 2, 2, 2]:  # 仅ResNet-18使用预训练backbone
-                # 使用官方预训练模型作为backbone
-                try:
-                    from torchvision.models.video import r3d_18, R3D_18_Weights
-                    self.backbone = r3d_18(weights=R3D_18_Weights.DEFAULT)
-                    # 移除分类层
-                    self.backbone.fc = nn.Identity()
-                except ImportError:
-                    import torchvision.models.video as models
-                    self.backbone = models.r3d_18(pretrained=True)
-                    # 移除分类层
-                    self.backbone.fc = nn.Identity()
-            else:
-                # 自定义模型
-                self.in_channels = 64
-                self.conv1 = nn.Conv3d(input_channels, 64, kernel_size=(3, 7, 7), stride=(1, 2, 2),
-                                       padding=(1, 3, 3), bias=False)
-                self.bn1 = nn.BatchNorm3d(64) if use_batch_norm else nn.Identity()
-                self.relu = nn.ReLU(inplace=True)
+            self.conv1 = nn.Conv3d(input_channels, 64, kernel_size=(3, 7, 7), stride=(1, 2, 2),
+                                   padding=(1, 3, 3), bias=False)
+            self.bn1 = nn.BatchNorm3d(64) if use_batch_norm else nn.Identity()
+            self.relu = nn.ReLU(inplace=True)
 
-                # 残差层
-                self.layer1 = self._make_layer(block, 64, layers[0], stride=1)
-                self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
-                self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
-                self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
-                
-                # 添加注意力模块
-                if self.use_attention:
-                    if attention_type == 'cbam':
-                        self.attention = CBAM(512 * block.expansion)
-                    else:
-                        self.attention = AttentionBlock(512 * block.expansion, use_batch_norm=use_batch_norm)
-                
-                # 全局平均池化
-                self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
-            
-            # 全连接层
+            self.layer1 = self._make_layer(block, 64, layers[0], stride=1, in_channels=64)
+            self.layer2 = self._make_layer(block, 128, layers[1], stride=2, in_channels=64 * block.expansion)
+            self.layer3 = self._make_layer(block, 256, layers[2], stride=2, in_channels=128 * block.expansion)
+            self.layer4 = self._make_layer(block, 512, layers[3], stride=2, in_channels=256 * block.expansion)
+
+            if self.use_attention:
+                if attention_type == 'cbam':
+                    self.attention = CBAM(512 * block.expansion)
+                else:
+                    self.attention = AttentionBlock(512 * block.expansion, use_batch_norm=use_batch_norm)
+
+            self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
             self.fc = nn.Linear(512 * block.expansion, num_classes)
-        
-        # 添加dropout层
+
         if self.use_dropout:
             self.dropout = nn.Dropout(p=self.dropout_rate)
-    
+
     def _make_layer(self, block, out_channels, blocks, stride, in_channels=None):
         strides = [stride] + [1] * (blocks - 1)
         layers = []
-        # 如果没有提供in_channels，使用实例的in_channels
-        current_in_channels = in_channels if in_channels is not None else self.in_channels
-        for stride in strides:
-            layers.append(block(current_in_channels, out_channels, stride, use_batch_norm=self.use_batch_norm))
+        current_in_channels = in_channels
+        for s in strides:
+            layers.append(block(current_in_channels, out_channels, s, use_batch_norm=self.use_batch_norm))
             current_in_channels = out_channels * block.expansion
         return nn.Sequential(*layers)
-    
-    def forward_backbone(self, model, x):
-        """前向传播backbone，返回layer4的feature map"""
-        # 拆分backbone，只使用特征提取部分
-        x = model.stem(x)
-        x = model.layer1(x)
-        x = model.layer2(x)
-        x = model.layer3(x)
-        x = model.layer4(x)
-        return x
-    
+
     def forward(self, x):
         if self.use_two_stream:
-            # 分离灰度流和光流
-            gray_stream = x[:, :1, :, :, :]  # 第0通道是灰度
-            flow_stream = x[:, 1:, :, :, :]  # 第1-3通道是光流
-            
-            # 将灰度流单通道复制为三通道
-            gray_stream = torch.cat([gray_stream, gray_stream, gray_stream], dim=1)
-            
-            # 处理灰度流分支
-            if hasattr(self, 'gray_backbone'):
-                # 使用预训练backbone，获取layer4的feature map
-                gray_feat = self.forward_backbone(self.gray_backbone, gray_stream)
-                # 应用注意力模块
-                if self.use_attention:
-                    gray_feat = self.gray_attention(gray_feat)
-                # 全局平均池化
-                gray = self.gray_backbone.avgpool(gray_feat)
-                gray = gray.view(gray.size(0), -1)
-            else:
-                # 自定义模型
-                gray_feat = self.gray_relu(self.gray_bn1(self.gray_conv1(gray_stream)))
-                gray_feat = self.gray_layer1(gray_feat)
-                gray_feat = self.gray_layer2(gray_feat)
-                gray_feat = self.gray_layer3(gray_feat)
-                gray_feat = self.gray_layer4(gray_feat)
-                # 应用注意力模块
-                if self.use_attention:
-                    gray_feat = self.gray_attention(gray_feat)
-                # 全局平均池化
-                gray = self.gray_avgpool(gray_feat)
-                gray = gray.view(gray.size(0), -1)
-            
-            # 处理光流分支
-            if hasattr(self, 'flow_backbone'):
-                # 使用预训练backbone，获取layer4的feature map
-                flow_feat = self.forward_backbone(self.flow_backbone, flow_stream)
-                # 应用注意力模块
-                if self.use_attention:
-                    flow_feat = self.flow_attention(flow_feat)
-                # 全局平均池化
-                flow = self.flow_backbone.avgpool(flow_feat)
-                flow = flow.view(flow.size(0), -1)
-            else:
-                # 自定义模型
-                flow_feat = self.flow_relu(self.flow_bn1(self.flow_conv1(flow_stream)))
-                flow_feat = self.flow_layer1(flow_feat)
-                flow_feat = self.flow_layer2(flow_feat)
-                flow_feat = self.flow_layer3(flow_feat)
-                flow_feat = self.flow_layer4(flow_feat)
-                # 应用注意力模块
-                if self.use_attention:
-                    flow_feat = self.flow_attention(flow_feat)
-                # 全局平均池化
-                flow = self.flow_avgpool(flow_feat)
-                flow = flow.view(flow.size(0), -1)
-            
-            # 特征级Gate机制融合
-            # 拼接两个流的特征作为门控输入
+            gray_stream = x[:, :1].repeat(1, 3, 1, 1, 1)
+            flow_stream = x[:, 1:]
+
+            gray_feat = self.gray_relu(self.gray_bn1(self.gray_conv1(gray_stream)))
+            gray_feat = self.gray_layer1(gray_feat)
+            gray_feat = self.gray_layer2(gray_feat)
+            gray_feat = self.gray_layer3(gray_feat)
+            gray_feat = self.gray_layer4(gray_feat)
+            if self.use_attention:
+                gray_feat = self.gray_attention(gray_feat)
+            gray = self.gray_avgpool(gray_feat).flatten(1)
+
+            flow_feat = self.flow_relu(self.flow_bn1(self.flow_conv1(flow_stream)))
+            flow_feat = self.flow_layer1(flow_feat)
+            flow_feat = self.flow_layer2(flow_feat)
+            flow_feat = self.flow_layer3(flow_feat)
+            flow_feat = self.flow_layer4(flow_feat)
+            if self.use_attention:
+                flow_feat = self.flow_attention(flow_feat)
+            flow = self.flow_avgpool(flow_feat).flatten(1)
+
             gate_input = torch.cat([gray, flow], dim=1)
-            # 计算特征级门控权重
             gate_weights = self.gate_fc(gate_input)
-            # 分割为两个流的权重
-            gray_weights = gate_weights[:, :gray.size(1)]
-            flow_weights = gate_weights[:, gray.size(1):]
-            # 应用特征级门控权重并融合
-            x = gray * gray_weights + flow * flow_weights
+            gray_w, flow_w = gate_weights[:, :gray.size(1)], gate_weights[:, gray.size(1):]
+            x = gray * gray_w + flow * flow_w
         else:
-            # 单流法
-            # 检查输入通道数，如果是1通道灰度图，复制为三通道
             if x.size(1) == 1:
-                x = torch.cat([x, x, x], dim=1)
-            
-            if hasattr(self, 'backbone'):
-                # 使用预训练backbone，获取layer4的feature map
-                feat = self.forward_backbone(self.backbone, x)
-                # 应用注意力模块
-                if self.use_attention:
-                    feat = self.attention(feat)
-                # 全局平均池化
-                x = self.backbone.avgpool(feat)
-                x = x.view(x.size(0), -1)
-            else:
-                # 自定义模型
-                feat = self.relu(self.bn1(self.conv1(x)))
-                feat = self.layer1(feat)
-                feat = self.layer2(feat)
-                feat = self.layer3(feat)
-                feat = self.layer4(feat)
-                
-                if self.use_attention:
-                    feat = self.attention(feat)
-                
-                x = self.avgpool(feat)
-                x = x.view(x.size(0), -1)
-        
-        # 使用dropout层
+                x = x.repeat(1, 3, 1, 1, 1)
+
+            feat = self.relu(self.bn1(self.conv1(x)))
+            feat = self.layer1(feat)
+            feat = self.layer2(feat)
+            feat = self.layer3(feat)
+            feat = self.layer4(feat)
+
+            if self.use_attention:
+                feat = self.attention(feat)
+
+            x = self.avgpool(feat).flatten(1)
+
         if self.use_dropout:
             x = self.dropout(x)
-        
+
         x = self.fc(x)
         return x
 
-# 预定义不同深度的3D ResNet模型
-def resnet3d18(num_classes=10, use_attention=True, attention_type='cbam', pretrained=False, pretrained_dataset='kinetics400', use_dropout=True, dropout_rate=0.5, input_channels=3, use_batch_norm=True, config=None):
+
+def resnet3d18(num_classes=10, use_attention=True, attention_type='cbam',
+               use_dropout=True, dropout_rate=0.5, input_channels=3,
+               use_batch_norm=True, config=None):
     """3D ResNet-18模型"""
-    model = ResNet3D(BasicBlock3D, [2, 2, 2, 2], num_classes, use_attention, attention_type, use_dropout, dropout_rate, input_channels, use_batch_norm, config, pretrained=pretrained)
-    return model
+    return ResNet3D(BasicBlock3D, [2, 2, 2, 2], num_classes, use_attention,
+                    attention_type, use_dropout, dropout_rate, input_channels,
+                    use_batch_norm, config)
 
 
-def resnet3d34(num_classes=10, use_attention=True, attention_type='cbam', pretrained=False, pretrained_dataset='kinetics400', use_dropout=True, dropout_rate=0.5, input_channels=3, use_batch_norm=True, config=None):
+def resnet3d34(num_classes=10, use_attention=True, attention_type='cbam',
+               use_dropout=True, dropout_rate=0.5, input_channels=3,
+               use_batch_norm=True, config=None):
     """3D ResNet-34模型"""
-    model = ResNet3D(BasicBlock3D, [3, 4, 6, 3], num_classes, use_attention, attention_type, use_dropout, dropout_rate, input_channels, use_batch_norm, config, pretrained=pretrained)
-    return model
+    return ResNet3D(BasicBlock3D, [3, 4, 6, 3], num_classes, use_attention,
+                    attention_type, use_dropout, dropout_rate, input_channels,
+                    use_batch_norm, config)

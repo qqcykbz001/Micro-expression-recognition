@@ -363,6 +363,50 @@ class BaseMicroExpressionDataset(Dataset):
             else:
                 return frames, None
 
+    def _apply_temporal_augmentation(self, gray_frames, flow_frames):
+        """时域增强：随机帧丢弃 + 时序局部打乱（灰度与光流的操作帧范围对齐）"""
+        if not self.config:
+            return gray_frames, flow_frames
+
+        # 操作范围取 num_frames（光流帧数），避免灰度多出的一帧导致越界
+        T = min(len(gray_frames), self.num_frames)
+        if flow_frames is not None:
+            T = min(T, len(flow_frames))
+        if T < 4:
+            return gray_frames, flow_frames
+
+        # --- 随机帧丢弃：选一帧用相邻帧线性插值填充 ---
+        if (getattr(self.config, 'random_frame_dropout', False)
+                and np.random.random() < getattr(self.config, 'frame_dropout_prob', 0.3)):
+            drop_idx = np.random.randint(1, T - 1)
+            gray_frames[drop_idx] = ((gray_frames[drop_idx - 1].astype(np.float32)
+                                      + gray_frames[drop_idx + 1].astype(np.float32)) / 2.0).astype(np.uint8)
+            if flow_frames is not None and drop_idx < len(flow_frames) - 1:
+                # 光流帧：对受影响的相邻光流做平滑
+                flow_arr = flow_frames if isinstance(flow_frames, np.ndarray) else np.array(flow_frames)
+                flow_arr[drop_idx] = ((flow_arr[drop_idx - 1].astype(np.float32)
+                                       + flow_arr[min(drop_idx + 1, len(flow_arr) - 1)].astype(np.float32)) / 2.0)
+                if not isinstance(flow_frames, np.ndarray):
+                    for i in range(len(flow_frames)):
+                        flow_frames[i] = flow_arr[i]
+
+        # --- 时序局部打乱：2~3帧连续块反转顺序 ---
+        if (getattr(self.config, 'random_temporal_shuffle', False)
+                and np.random.random() < getattr(self.config, 'temporal_shuffle_prob', 0.3)):
+            block_size = np.random.randint(2, 4)
+            start = np.random.randint(0, T - block_size)
+            idx_fwd = list(range(start, start + block_size))
+            idx_rev = idx_fwd[::-1]
+            gray_frames[idx_fwd] = gray_frames[idx_rev]
+            if flow_frames is not None:
+                if isinstance(flow_frames, np.ndarray):
+                    flow_frames[idx_fwd] = flow_frames[idx_rev]
+                else:
+                    for i, j in zip(idx_fwd, idx_rev):
+                        flow_frames[i], flow_frames[j] = flow_frames[j].copy(), flow_frames[i].copy()
+
+        return gray_frames, flow_frames
+
     # 缓存版本号，格式变更时递增使旧缓存自动失效
     _CACHE_VERSION = 3
 
@@ -438,6 +482,11 @@ class BaseMicroExpressionDataset(Dataset):
         # 数据增强（每次随机，不受缓存影响）
         raw_gray_frames, raw_flow_frames = self._apply_data_augmentation(
             raw_gray_frames, raw_flow_frames if need_flow else None)
+
+        # 时域增强（空间增强后、归一化前，灰度与光流同步）
+        if self.config and self.config.use_data_augmentation:
+            raw_gray_frames, raw_flow_frames = self._apply_temporal_augmentation(
+                raw_gray_frames, raw_flow_frames)
 
         # 灰度帧归一化
         normalized_gray = raw_gray_frames[:self.num_frames].astype(np.float32)

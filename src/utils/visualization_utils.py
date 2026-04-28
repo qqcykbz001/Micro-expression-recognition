@@ -5,7 +5,7 @@ from sklearn.metrics import confusion_matrix
 import seaborn as sns
 
 # 训练可视化函数
-def plot_training_metrics(train_losses, train_accuracies, test_accuracies, test_uar_scores, test_uf1s, learning_rates, fold, model_dir, dataset_name='casme2'):
+def plot_training_metrics(train_losses, train_accuracies, test_accuracies, test_uar_scores, test_uf1s, learning_rates, fold, model_dir, dataset_name='casme2', late_select_start=None):
     """生成训练过程的可视化图表"""
     epochs = range(1, len(train_losses) + 1)
     
@@ -54,6 +54,11 @@ def plot_training_metrics(train_losses, train_accuracies, test_accuracies, test_
     axes[1, 1].legend()
     axes[1, 1].grid(True, linestyle='--', alpha=0.7)
     
+    # 标记 late-phase 起始线
+    if late_select_start is not None and late_select_start <= len(epochs):
+        for ax in axes.flatten():
+            ax.axvline(late_select_start, color='gray', ls=':', lw=1.2, alpha=0.7)
+
     # 调整子图间距
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     
@@ -89,3 +94,54 @@ def plot_confusion_matrix(all_targets, all_predicted, classes, model_dir, title=
     plt.savefig(cm_path, dpi=300, bbox_inches='tight')
     plt.close()
     print(f'Confusion matrix saved to {cm_path}')
+
+
+def plot_loso_summary(accuracies, uar_scores, uf1_scores, valid_subjects,
+                      model_dir, dataset_name='casme2'):
+    """LOSO 汇总柱状图：每 fold 的 Acc/UAR/UF1 + 均值线 + 统计文本"""
+    n = len(accuracies)
+    if n == 0:
+        return
+    x = np.arange(n)
+    w = 0.25
+
+    try:
+        plt.style.use('seaborn-v0_8-whitegrid')
+    except Exception:
+        plt.style.use('ggplot')
+
+    fig, ax = plt.subplots(figsize=(max(12, n * 0.45), 6))
+    ax.bar(x - w, accuracies, w, color='steelblue', edgecolor='white', label='Acc')
+    ax.bar(x, uar_scores, w, color='darkorange', edgecolor='white', label='UAR')
+    ax.bar(x + w, uf1_scores, w, color='mediumorchid', edgecolor='white', label='UF1')
+
+    for vals, color in [(accuracies, 'steelblue'), (uar_scores, 'darkorange'), (uf1_scores, 'mediumorchid')]:
+        ax.axhline(np.mean(vals), color=color, ls='--', lw=1.5, alpha=0.6)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(valid_subjects, rotation=45, ha='right', fontsize=8)
+    ax.set_ylabel('%')
+    ax.set_title(f'LOSO Cross-Validation — {dataset_name.upper()}', fontsize=16, fontweight='bold')
+    ax.legend(fontsize=10)
+    ax.set_ylim(0, 105)
+    ax.grid(axis='y', ls='--', alpha=0.5)
+
+    mean_acc, std_acc = np.mean(accuracies), np.std(accuracies)
+    mean_uar, std_uar = np.mean(uar_scores), np.std(uar_scores)
+    mean_uf1, std_uf1 = np.mean(uf1_scores), np.std(uf1_scores)
+    summary = (
+        f"Mean Acc: {mean_acc:.2f}% ± {std_acc:.2f}%\n"
+        f"Mean UAR: {mean_uar:.2f}% ± {std_uar:.2f}%\n"
+        f"Mean UF1: {mean_uf1:.2f}% ± {std_uf1:.2f}%\n"
+        f"Folds: {n}"
+    )
+    ax.text(0.98, 0.95, summary, transform=ax.transAxes, fontsize=11,
+            verticalalignment='top', horizontalalignment='right',
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+
+    plt.tight_layout()
+    os.makedirs(model_dir, exist_ok=True)
+    path = os.path.join(model_dir, f'loso_summary_{dataset_name}.png')
+    fig.savefig(path, dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    print(f'LOSO summary saved to {path}')

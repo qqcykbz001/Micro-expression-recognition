@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 from src.models.resnet3d import resnet3d18, resnet3d34
 from src.datasets import get_dataset
 from src.utils.train_utils import train, test, FocalLoss
-from src.utils.visualization_utils import plot_training_metrics, plot_confusion_matrix
+from src.utils.visualization_utils import plot_training_metrics, plot_confusion_matrix, plot_loso_summary
 import time
 import copy
 import datetime
@@ -180,15 +180,13 @@ def main():
         )
 
         # 根据是否使用双流法设置输入通道数（单通道灰度图）
-        input_channels = 4 if config.use_two_stream else 1
+        input_channels = 4 if config.use_two_stream else 3
         
         # 创建模型
         if config.model_name == 'resnet3d18':
             log(f'创建模型: 3D ResNet-18')
             model = resnet3d18(
-                num_classes=num_classes, 
-                pretrained=config.pretrained,
-                pretrained_dataset=getattr(config, 'pretrained_dataset', 'kinetics400'),
+                num_classes=num_classes,
                 use_attention=config.use_attention,
                 attention_type=config.attention_type,
                 use_dropout=config.use_dropout,
@@ -200,9 +198,7 @@ def main():
         elif config.model_name == 'resnet3d34':
             log(f'创建模型: 3D ResNet-34')
             model = resnet3d34(
-                num_classes=num_classes, 
-                pretrained=config.pretrained,
-                pretrained_dataset=getattr(config, 'pretrained_dataset', 'kinetics400'),
+                num_classes=num_classes,
                 use_attention=config.use_attention,
                 attention_type=config.attention_type,
                 use_dropout=config.use_dropout,
@@ -312,6 +308,7 @@ def main():
 
         patience_counter = 0  # 早停计数器
         early_stopping_patience = getattr(config, 'early_stopping_patience', 20)
+        late_select_start = num_epochs - getattr(config, 'late_select_epochs', 0)
 
         if os.path.exists(checkpoint_path):
             log(f'从 {checkpoint_path} 加载检查点...')
@@ -339,23 +336,17 @@ def main():
         for epoch in range(start_epoch, num_epochs):
             # 学习率warmup
             if use_warmup and epoch < warmup_epochs:
-                # 计算当前warmup学习率
                 if epoch == warmup_epochs - 1:
-                    current_lr = learning_rate  # 最后一轮精准落点，消除与scheduler的跳变
+                    current_lr = learning_rate
                 else:
                     current_lr = warmup_start_lr + epoch * warmup_step
-                # 设置学习率
                 for param_group in optimizer.param_groups:
                     param_group['lr'] = current_lr
-                log(f'Epoch {epoch + 1}/{num_epochs}, 学习率 (warmup): {current_lr:.6f}')
             else:
                 current_lr = optimizer.param_groups[0]["lr"]
-                log(f'Epoch {epoch + 1}/{num_epochs}, 学习率: {current_lr:.6f}')
-            # 记录epoch开始时间
+
             epoch_start = time.time()
 
-            # 训练模型
-            log(f'开始训练轮次 {epoch + 1}/{num_epochs}...')
             train_loss, train_acc = train(
                 model, train_loader, criterion, optimizer, device,
                 accumulation_steps=config.accumulation_steps,
@@ -366,14 +357,11 @@ def main():
                 grad_clip_norm=config.grad_clip_norm,
                 num_classes=config.num_classes
             )
-            log(f'Epoch {epoch + 1} 训练完成: Loss={train_loss:.4f}, Acc={train_acc:.2f}%', level="SUCCESS")
 
-            # 测试模型
-            log(f'开始测试轮次 {epoch + 1}...')
             test_acc, test_uar, test_uf1, fold_targets, fold_predicted = test(model, test_loader, criterion, device, log_func=log)
-            log(f'Epoch {epoch + 1} 测试完成: Acc={test_acc:.2f}%, UAR={test_uar:.2f}%, UF1={test_uf1:.2f}%', level="SUCCESS")
+            epoch_time = time.time() - epoch_start
+            combined_score = (test_acc + test_uar + test_uf1) / 3
 
-            # 记录数据用于可视化
             train_losses.append(train_loss)
             train_accuracies.append(train_acc)
             test_accuracies.append(test_acc)
@@ -381,45 +369,42 @@ def main():
             test_uf1s.append(test_uf1)
             learning_rates.append(current_lr)
 
-            # 更新学习率 - 确保在optimizer.step()之后调用
             if use_warmup and epoch < warmup_epochs:
-                # warmup阶段不更新调度器
                 pass
             else:
                 if config.scheduler_name == 'reduce_lr_on_plateau':
-                    # ReduceLROnPlateau需要传入验证损失
                     scheduler.step(train_loss)
                 else:
-                    # 其他调度器直接调用
                     scheduler.step()
 
-            # 计算epoch时间
-            epoch_time = time.time() - epoch_start
-            log(f'Epoch {epoch + 1} completed in {epoch_time:.2f} seconds')
+            # 单行日志: [epoch] train_loss|train_acc  test_acc|uar|uf1  combined  lr  time   phase标记
+            phase = "WARM" if (use_warmup and epoch < warmup_epochs) else ("LATE" if epoch >= late_select_start else "TRN")
+            log(f'Epoch {epoch + 1:>3d}/{num_epochs} | '
+                f'TL:{train_loss:.4f} TA:{train_acc:5.1f}% | '
+                f'VA:{test_acc:5.1f}% UAR:{test_uar:5.1f}% UF1:{test_uf1:5.1f}% | '
+                f'CS:{combined_score:5.1f}% | '
+                f'LR:{current_lr:.2e} | '
+                f'{epoch_time:5.1f}s [{phase}]',
+                level="SUCCESS")
 
-            # 计算综合评分（考虑准确率、UAR和UF1）
-            combined_score = (test_acc + test_uar + test_uf1) / 3
-            
-            # 保存最佳模型 - 基于综合评分
-            if combined_score > best_combined_score:
-                best_combined_score = combined_score
-                best_accuracy = test_acc
-                best_uar = test_uar
-                best_uf1 = test_uf1
-                patience_counter = 0  # 有提升，重置早停计数
-                best_model_path = os.path.join(model_dir, f'best_resnet3d_model_{config.dataset_name}_fold{i + 1}.pth')
-                torch.save(model.state_dict(), best_model_path)
-                log(f'最佳模型已保存到 {best_model_path}，综合评分: {combined_score:.2f}%, 准确率: {test_acc:.2f}%, UAR: {test_uar:.2f}%, UF1: {test_uf1:.2f}%')
-            else:
-                patience_counter += 1
-                log(f'当前最佳综合评分: {best_combined_score:.2f}%, 准确率: {best_accuracy:.2f}%, UAR: {best_uar:.2f}%, UF1: {best_uf1:.2f}% (早停: {patience_counter}/{early_stopping_patience})')
+            # 仅 late-phase 选模型，仅提升时打印一条额外日志
+            if epoch >= late_select_start:
+                if combined_score > best_combined_score:
+                    best_combined_score = combined_score
+                    best_accuracy = test_acc
+                    best_uar = test_uar
+                    best_uf1 = test_uf1
+                    patience_counter = 0
+                    best_model_path = os.path.join(model_dir, f'best_resnet3d_model_{config.dataset_name}_fold{i + 1}.pth')
+                    torch.save(model.state_dict(), best_model_path)
+                    log(f'  >> 最佳已更新 | CS:{combined_score:.1f}% Acc:{test_acc:.1f}% UAR:{test_uar:.1f}% UF1:{test_uf1:.1f}%')
+                else:
+                    patience_counter += 1
 
-            # 早停检查
-            if patience_counter >= early_stopping_patience:
-                log(f'早停触发! 连续 {early_stopping_patience} 轮无提升，停止训练')
-                break
+                if patience_counter >= early_stopping_patience:
+                    log(f'早停触发 (连续{early_stopping_patience}轮无提升)')
+                    break
 
-            # 根据频率保存检查点
             if (epoch + 1) % config.save_checkpoint_freq == 0 or (epoch + 1) == num_epochs:
                 checkpoint = {
                     'epoch': epoch,
@@ -428,8 +413,8 @@ def main():
                     'scheduler_state_dict': scheduler.state_dict(),
                     'best_accuracy': best_accuracy,
                     'best_combined_score': best_combined_score,
-                    'best_uar': best_uar,  
-                    'best_uf1': best_uf1,  
+                    'best_uar': best_uar,
+                    'best_uf1': best_uf1,
                     'patience_counter': patience_counter,
                     'train_losses': train_losses,
                     'train_accuracies': train_accuracies,
@@ -441,18 +426,10 @@ def main():
                 torch.save(checkpoint, checkpoint_path)
                 log(f'检查点已保存到 {checkpoint_path}')
 
-            # 打印当前轮次的详细信息
-            log(f'Epoch {epoch + 1} 详细信息:')
-            log(f'  训练损失: {train_loss:.4f}')
-            log(f'  训练准确率: {train_acc:.2f}%')
-            log(f'  测试准确率: {test_acc:.2f}%')
-            log(f'  测试UF1: {test_uf1:.2f}%')
-            log(f'  学习率: {current_lr:.6f}')
-            log(f'  耗时: {epoch_time:.2f}秒')
-
         # 生成可视化图表
         plot_training_metrics(train_losses, train_accuracies, test_accuracies, test_uar_scores, test_uf1s, learning_rates, i + 1,
-                              config.figure_dir, dataset_name=config.dataset_name)
+                              config.figure_dir, dataset_name=config.dataset_name,
+                              late_select_start=late_select_start)
 
         # 收集该fold的最佳模型的预测结果
         # 重新加载最佳模型并测试
@@ -504,6 +481,10 @@ def main():
         # 绘制混淆矩阵
         classes = train_dataset.get_class_names()
         plot_confusion_matrix(all_targets, all_predicted, classes, config.figure_dir, dataset_name=config.dataset_name)
+
+        # 绘制 LOSO 汇总图
+        plot_loso_summary(accuracies, uar_scores, uf1_scores, valid_subjects,
+                          config.figure_dir, dataset_name=config.dataset_name)
         
         # 导出结果到CSV
         results_df = pd.DataFrame({

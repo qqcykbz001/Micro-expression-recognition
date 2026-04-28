@@ -13,7 +13,7 @@ class Config:
         # =============================================================================
         # 数据集配置
         # =============================================================================
-        self.dataset_name = 'samm'  # 数据集名称: 'casme2', 'samm'
+        self.dataset_name = 'casme2'  # 数据集名称: 'casme2', 'samm'
         self.dataset_roots = {
             'casme2': 'CASME2/CASME2_Cropped',
             'samm': 'SAMM/SAMM_Cropped'
@@ -34,8 +34,8 @@ class Config:
         # 训练配置
         # =============================================================================
         self.batch_size = 8            # 批次大小
-        self.num_epochs = 80            # 训练轮数
-        self.learning_rate = 5e-3       # 学习率
+        self.num_epochs = 50            # 训练轮数
+        self.learning_rate = 1e-2       # 学习率
         self.accumulation_steps = 1     # 梯度累积步数
         self.use_amp = True             # 是否使用混合精度训练
         self.num_workers = 4            # DataLoader 并行进程数
@@ -68,7 +68,8 @@ class Config:
         self.dropout_rate = 0.3         # Dropout概率
         self.use_batch_norm = True      # 是否使用批量归一化
         self.grad_clip_norm = 1.0       # 梯度裁剪阈值 (防止3D CNN梯度爆炸)
-        self.early_stopping_patience = 20 # 早停耐心值 (轮数内无提升则停止)
+        self.early_stopping_patience = 999 # 早停耐心值 (轮数内无提升则停止)
+        self.late_select_epochs = 10     # 仅最后N轮参与最佳模型选择，避免前期震荡误选
         self.use_mixup = True           # 是否使用Mixup增强
         self.mixup_alpha = 0.2          # Mixup的Beta分布alpha参数
         
@@ -83,6 +84,10 @@ class Config:
         self.random_horizontal_flip = True       # 是否使用随机水平翻转
         self.random_brightness = True            # 是否使用随机亮度增强
         self.random_contrast = False              # 是否使用随机对比度增强
+        self.random_frame_dropout = True         # 是否使用随机帧丢弃
+        self.frame_dropout_prob = 0.3            # 帧丢弃概率
+        self.random_temporal_shuffle = True      # 是否使用时序局部打乱
+        self.temporal_shuffle_prob = 0.3         # 时序打乱概率
 
 
         
@@ -115,19 +120,17 @@ class Config:
         self.model_name = 'resnet3d18'  # 模型名称: 'resnet3d18', 'resnet3d34', 'resnet3d50'
         self.use_attention = True       # 是否使用注意力机制
         self.attention_type = 'cbam'    # 注意力类型: 'cbam', 'self'
-        self.pretrained = False          # 是否使用预训练权重
-        self.pretrained_dataset = 'kinetics400'  # 预训练数据集: 'kinetics400', 'kinetics600'
         
         # =============================================================================
         # 输出配置
         # =============================================================================
         self.output_dir = 'outputs'  # 输出目录
-        self.dataset_output_dir = os.path.join(self.output_dir, self.dataset_name)  # 数据集特定输出目录
+        self.dataset_output_dir = os.path.join(self.output_dir, self.dataset_name, "all")  # 数据集特定输出目录
         self.checkpoint_dir = os.path.join(self.dataset_output_dir, 'checkpoints')  # 检查点目录
         self.figure_dir = os.path.join(self.dataset_output_dir, 'figures')  # 图表目录
         self.log_dir = os.path.join(self.dataset_output_dir, 'logs')  # 日志目录
         self.log_file = os.path.join(self.log_dir, 'training.log')  # 日志文件
-        self.save_checkpoint_freq = 100  # 检查点保存频率
+        self.save_checkpoint_freq = 20  # 检查点保存频率
         
         # =============================================================================
         # 其他配置
