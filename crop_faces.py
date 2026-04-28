@@ -4,8 +4,8 @@ import numpy as np
 from tqdm import tqdm
 
 # 配置
-INPUT_DIR = 'CASME2/CASME2'
-OUTPUT_DIR = 'CASME2/CASME2_Cropped'
+INPUT_DIR = 'SAMM/SAMM'
+OUTPUT_DIR = 'SAMM/SAMM_Cropped'
 
 # 确保输出目录存在
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -307,7 +307,7 @@ def process_dataset(margin=10, min_face_size=30, scale_factor=1.1, min_neighbors
                                 center_y = top + face_height // 2
                                 top = max(0, center_y - int(face_height * 0.40))
                                 bottom = min(img.shape[0], center_y + int(face_height * 0.55))
-                                half_width = int(face_width * 0.42)
+                                half_width = int(face_width * 0.45)
                                 left = max(0, center_x - half_width)
                                 right = min(img.shape[1], center_x + half_width)
                                 crop_width = right - left

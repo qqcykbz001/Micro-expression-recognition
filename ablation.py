@@ -25,9 +25,9 @@ from src.utils.visualization_utils import plot_training_metrics, plot_confusion_
 # ---------------------------------------------------------------------------
 ABLATIONS = {
     "baseline":    {"use_attention": False, "use_two_stream": False, "video_magnification": False},
-    "+two_stream": {"use_attention": False, "use_two_stream": True,  "video_magnification": False},
-    "+cbam":       {"use_attention": True,  "use_two_stream": False, "video_magnification": False},
-    "+evm":        {"use_attention": False, "use_two_stream": False, "video_magnification": True},
+    "two_stream": {"use_attention": False, "use_two_stream": True,  "video_magnification": False},
+    "cbam":       {"use_attention": True,  "use_two_stream": False, "video_magnification": False},
+    "evm":        {"use_attention": False, "use_two_stream": False, "video_magnification": True},
     "all":         {"use_attention": True,  "use_two_stream": True,  "video_magnification": True},
 }
 

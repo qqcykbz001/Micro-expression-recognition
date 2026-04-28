@@ -33,9 +33,9 @@ class Config:
         # =============================================================================
         # 训练配置
         # =============================================================================
-        self.batch_size = 8            # 批次大小
+        self.batch_size = 4             # 批次大小
         self.num_epochs = 50            # 训练轮数
-        self.learning_rate = 1e-2       # 学习率
+        self.learning_rate = 5e-3       # 学习率
         self.accumulation_steps = 1     # 梯度累积步数
         self.use_amp = True             # 是否使用混合精度训练
         self.num_workers = 4            # DataLoader 并行进程数
@@ -149,8 +149,8 @@ class Config:
         if self.dataset_name == 'casme2':
             # CASME2 数据集特定参数
             self.focal_alpha = [1.3205, 1.4525, 0.227]
-            self.scale_range = [0.90, 1.10]          # 缩放范围
-            self.rotation_range = [-5, 5]            # 旋转角度范围
+            self.scale_range = [0.95, 1.05]          # 缩放范围
+            self.rotation_range = [-3, 3]            # 旋转角度范围
             self.brightness_range = [0.90, 1.10]       # 亮度调整范围
             self.contrast_range = [0.90, 1.10]        # 对比度调整范围
             self.evm_amplification = 10.0             # 视频放大倍数
@@ -158,20 +158,20 @@ class Config:
             self.fps = 200                           # 视频帧率（Hz）
         elif self.dataset_name == 'samm':
             # SAMM 数据集特定参数
-            self.focal_alpha = [1.3205, 1.4525, 0.227]
-            self.scale_range = [0.90, 1.10]          # 缩放范围
-            self.rotation_range = [-5, 5]            # 旋转角度范围
+            self.focal_alpha = [0.9898, 1.7817, 0.2284]
+            self.scale_range = [0.95, 1.05]          # 缩放范围
+            self.rotation_range = [-3, 3]            # 旋转角度范围
             self.brightness_range = [0.90, 1.10]       # 亮度调整范围
             self.contrast_range = [0.90, 1.10]        # 对比度调整范围
             self.evm_amplification = 10.0             # 视频放大倍数
             self.evm_frequency_band = [40.0, 200.0]     # 视频放大的频率带（毫秒）
-            self.fps = 200                            # 视频帧率（Hz）
+            self.fps = 200                           # 视频帧率（Hz）
         else:
             # 默认参数
             self.scale_range = [0.95, 1.05]          # 缩放范围
             self.rotation_range = [-3, 3]            # 旋转角度范围
-            self.brightness_range = [0.85, 1.15]       # 亮度调整范围
-            self.contrast_range = [0.7, 1.3]        # 对比度调整范围
-            self.evm_amplification = 5.0             # 视频放大倍数
-            self.evm_frequency_band = [50.0, 400.0]     # 视频放大的频率带（毫秒）
-            self.fps = 200                            # 视频帧率（Hz）
+            self.brightness_range = [0.90, 1.10]       # 亮度调整范围
+            self.contrast_range = [0.90, 1.10]        # 对比度调整范围
+            self.evm_amplification = 10.0             # 视频放大倍数
+            self.evm_frequency_band = [40.0, 200.0]     # 视频放大的频率带（毫秒）
+            self.fps = 200                           # 视频帧率（Hz）
