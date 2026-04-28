@@ -69,7 +69,7 @@ class Config:
         self.use_batch_norm = True      # 是否使用批量归一化
         self.grad_clip_norm = 1.0       # 梯度裁剪阈值 (防止3D CNN梯度爆炸)
         self.early_stopping_patience = 999 # 早停耐心值 (轮数内无提升则停止)
-        self.late_select_epochs = 10     # 仅最后N轮参与最佳模型选择，避免前期震荡误选
+        self.late_select_epochs = 5     # 仅最后N轮参与最佳模型选择，避免前期震荡误选
         self.use_mixup = True           # 是否使用Mixup增强
         self.mixup_alpha = 0.2          # Mixup的Beta分布alpha参数
         
@@ -102,7 +102,7 @@ class Config:
         # 学习率调度器配置
         # =============================================================================
         self.use_warmup = True                      # 是否使用学习率warmup
-        self.warmup_epochs = 8                    # warmup的轮数
+        self.warmup_epochs = 5                    # warmup的轮数
         self.warmup_start_lr = self.learning_rate * 0.1  # warmup的起始学习率
         self.scheduler_name = 'cosine'             # 调度器名称: 'cosine', 'step', 'reduce_lr_on_plateau'
         
