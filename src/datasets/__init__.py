@@ -1,5 +1,6 @@
 from src.datasets.casme2_dataset import CASME2Dataset
 from src.datasets.samm_dataset import SAMMDataset
+from src.datasets.combined_dataset import CombinedDataset
 
 def get_dataset(config, **kwargs):
     """数据集工厂函数"""
@@ -19,5 +20,12 @@ def get_dataset(config, **kwargs):
                           width=config.width, 
                           config=config, 
                           **kwargs)
+    elif dataset_name == 'combined':
+        return CombinedDataset(config.root_dir, 
+                              num_frames=config.num_frames, 
+                              height=config.height, 
+                              width=config.width, 
+                              config=config, 
+                              **kwargs)
     else:
         raise ValueError(f"不支持的数据集类型: {dataset_name}")

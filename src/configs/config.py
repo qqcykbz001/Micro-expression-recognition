@@ -13,10 +13,11 @@ class Config:
         # =============================================================================
         # 数据集配置
         # =============================================================================
-        self.dataset_name = 'casme2'  # 数据集名称: 'casme2', 'samm'
+        self.dataset_name = 'combined'  # 数据集名称: 'casme2', 'samm', 'combined'
         self.dataset_roots = {
             'casme2': 'CASME2/CASME2_Cropped',
-            'samm': 'SAMM/SAMM_Cropped'
+            'samm': 'SAMM/SAMM_Cropped',
+            'combined': 'COMBINED/COMBINED_Cropped'
         }
         
         # 自动获取当前数据集的根目录
@@ -33,9 +34,9 @@ class Config:
         # =============================================================================
         # 训练配置
         # =============================================================================
-        self.batch_size = 4             # 批次大小
+        self.batch_size = 8             # 批次大小
         self.num_epochs = 50            # 训练轮数
-        self.learning_rate = 5e-3       # 学习率
+        self.learning_rate = 1e-2       # 学习率
         self.accumulation_steps = 1     # 梯度累积步数
         self.use_amp = True             # 是否使用混合精度训练
         self.num_workers = 4            # DataLoader 并行进程数
@@ -67,11 +68,11 @@ class Config:
         self.use_dropout = True         # 是否使用dropout
         self.dropout_rate = 0.3         # Dropout概率
         self.use_batch_norm = True      # 是否使用批量归一化
-        self.grad_clip_norm = 1.0       # 梯度裁剪阈值 (防止3D CNN梯度爆炸)
+        self.grad_clip_norm = 1.0       # 梯度裁剪阈值 
         self.early_stopping_patience = 999 # 早停耐心值 (轮数内无提升则停止)
         self.late_select_epochs = 5     # 仅最后N轮参与最佳模型选择，避免前期震荡误选
-        self.use_mixup = True           # 是否使用Mixup增强
-        self.mixup_alpha = 0.2          # Mixup的Beta分布alpha参数
+        self.use_mixup = False           # 是否使用Mixup增强
+        self.mixup_alpha = 0.1          # Mixup的Beta分布alpha参数
         
         # =============================================================================
         # 数据增强配置
@@ -117,7 +118,7 @@ class Config:
         # =============================================================================
         # 模型配置
         # =============================================================================
-        self.model_name = 'resnet3d18'  # 模型名称: 'resnet3d18', 'resnet3d34', 'resnet3d50'
+        self.model_name = 'resnet3d18'  # 模型名称: 'resnet3d18', 'resnet3d34'
         self.use_attention = True       # 是否使用注意力机制
         self.attention_type = 'cbam'    # 注意力类型: 'cbam', 'self'
         
@@ -125,18 +126,18 @@ class Config:
         # 输出配置
         # =============================================================================
         self.output_dir = 'outputs'  # 输出目录
-        self.dataset_output_dir = os.path.join(self.output_dir, self.dataset_name, "all")  # 数据集特定输出目录
+        self.dataset_output_dir = os.path.join(self.output_dir, self.dataset_name, "test")  # 数据集特定输出目录
         self.checkpoint_dir = os.path.join(self.dataset_output_dir, 'checkpoints')  # 检查点目录
         self.figure_dir = os.path.join(self.dataset_output_dir, 'figures')  # 图表目录
         self.log_dir = os.path.join(self.dataset_output_dir, 'logs')  # 日志目录
         self.log_file = os.path.join(self.log_dir, 'training.log')  # 日志文件
-        self.save_checkpoint_freq = 20  # 检查点保存频率
+        self.save_checkpoint_freq = 25  # 检查点保存频率
         
         # =============================================================================
         # 其他配置
         # =============================================================================
         self.seed = 123456  # 随机种子
-        self.deterministic = False  # 是否启用完全可复现模式（会降低训练速度）
+        self.deterministic = False  # 完全可复现模式
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'  # 设备
         
         # =============================================================================

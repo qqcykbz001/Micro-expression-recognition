@@ -4,8 +4,12 @@ import numpy as np
 from tqdm import tqdm
 
 # 配置
-INPUT_DIR = 'SAMM/SAMM'
-OUTPUT_DIR = 'SAMM/SAMM_Cropped'
+INPUT_DIR = 'CASME2/CASME2'
+OUTPUT_DIR = 'CASME2/CASME2_Cropped'
+# INPUT_DIR = 'SAMM/SAMM'
+# OUTPUT_DIR = 'SAMM/SAMM_Cropped'
+# INPUT_DIR = 'COMBINED/COMBINED'
+# OUTPUT_DIR = 'COMBINED/COMBINED_Cropped'
 
 # 确保输出目录存在
 os.makedirs(OUTPUT_DIR, exist_ok=True)

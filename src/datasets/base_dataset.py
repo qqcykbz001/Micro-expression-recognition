@@ -24,12 +24,11 @@ class BaseMicroExpressionDataset(Dataset):
         # 类别名称，由子类定义
         self.class_names = []
         
-        # 光流缓存目录（按数据集分类）
-        dataset_name = os.path.basename(self.root_dir)
-        self.flow_cache_dir = os.path.join('cache', 'optical_flow', dataset_name)
+        # 光流缓存目录
+        self.flow_cache_dir = os.path.join('cache')
         os.makedirs(self.flow_cache_dir, exist_ok=True)
 
-        # 帧文件列表缓存（避免每次 __getitem__ 都 os.listdir）
+        # 帧文件列表缓存
         self._frame_files_cache = {}
         
 
@@ -422,10 +421,10 @@ class BaseMicroExpressionDataset(Dataset):
             cache_filename = (
                 f"v{self._CACHE_VERSION}_{video_name}_n{self.num_frames}_"
                 f"h{self.height}w{self.width}_s{self.frame_step}_"
-                f"{self.config.optical_flow_type}_"
+                f"{use_two_stream}_{self.config.optical_flow_type}_"
                 f"{video_magnification}_{evm_amplification}_"
-                f"{evm_frequency_band[0]}_{evm_frequency_band[1]}_{fps}_"
-                f"{use_two_stream}.pkl"
+                f"{evm_frequency_band[0]}_{evm_frequency_band[1]}_{fps}.pkl"
+                
             )
         else:
             cache_filename = f"v{self._CACHE_VERSION}_{video_name}_{self.num_frames}_{self.height}_{self.width}_{self.frame_step}_none.pkl"

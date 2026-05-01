@@ -318,7 +318,7 @@ def run_experiment(config, ds_name, exp_name):
 
 # ---------------------------------------------------------------------------
 def main():
-    datasets = ["casme2"]
+    datasets = ["samm", "combined"]
     all_results = []
 
     for ds_name in datasets:
@@ -331,7 +331,7 @@ def main():
             cfg.dataset_name = ds_name
             cfg.root_dir = cfg.dataset_roots[ds_name]
 
-            # 基线组件（其余全开，被消融的三项由 ABLATIONS 决定）
+            # 基线组件
             cfg.use_mixup = True
             cfg.random_frame_dropout = True
             cfg.random_temporal_shuffle = True
